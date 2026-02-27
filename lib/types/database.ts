@@ -1,0 +1,577 @@
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export type Database = {
+  public: {
+    Tables: {
+      app_settings: {
+        Row: {
+          id: string
+          global_inbound_address: string | null
+          global_inbound_token: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          global_inbound_address?: string | null
+          global_inbound_token?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          global_inbound_address?: string | null
+          global_inbound_token?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      funds: {
+        Row: {
+          id: string
+          name: string
+          created_by: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          created_by: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          created_by?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'funds_created_by_fkey'
+            columns: ['created_by']
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      fund_members: {
+        Row: {
+          id: string
+          fund_id: string
+          user_id: string
+          invited_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          fund_id: string
+          user_id: string
+          invited_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          fund_id?: string
+          user_id?: string
+          invited_by?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'fund_members_fund_id_fkey'
+            columns: ['fund_id']
+            referencedRelation: 'funds'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'fund_members_user_id_fkey'
+            columns: ['user_id']
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'fund_members_invited_by_fkey'
+            columns: ['invited_by']
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      fund_settings: {
+        Row: {
+          id: string
+          fund_id: string
+          claude_api_key_encrypted: string | null
+          encryption_key_encrypted: string | null
+          postmark_inbound_address: string | null
+          postmark_webhook_token: string | null
+          retain_resolved_reviews: boolean
+          resolved_reviews_ttl_days: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          fund_id: string
+          claude_api_key_encrypted?: string | null
+          encryption_key_encrypted?: string | null
+          postmark_inbound_address?: string | null
+          postmark_webhook_token?: string | null
+          retain_resolved_reviews?: boolean
+          resolved_reviews_ttl_days?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          fund_id?: string
+          claude_api_key_encrypted?: string | null
+          encryption_key_encrypted?: string | null
+          postmark_inbound_address?: string | null
+          postmark_webhook_token?: string | null
+          retain_resolved_reviews?: boolean
+          resolved_reviews_ttl_days?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'fund_settings_fund_id_fkey'
+            columns: ['fund_id']
+            referencedRelation: 'funds'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      authorized_senders: {
+        Row: {
+          id: string
+          fund_id: string
+          email: string
+          label: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          fund_id: string
+          email: string
+          label?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          fund_id?: string
+          email?: string
+          label?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'authorized_senders_fund_id_fkey'
+            columns: ['fund_id']
+            referencedRelation: 'funds'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      companies: {
+        Row: {
+          id: string
+          fund_id: string
+          name: string
+          aliases: string[] | null
+          sector: string | null
+          stage: string | null
+          founded_year: number | null
+          notes: string | null
+          status: 'active' | 'exited' | 'written-off'
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          fund_id: string
+          name: string
+          aliases?: string[] | null
+          sector?: string | null
+          stage?: string | null
+          founded_year?: number | null
+          notes?: string | null
+          status?: 'active' | 'exited' | 'written-off'
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          fund_id?: string
+          name?: string
+          aliases?: string[] | null
+          sector?: string | null
+          stage?: string | null
+          founded_year?: number | null
+          notes?: string | null
+          status?: 'active' | 'exited' | 'written-off'
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'companies_fund_id_fkey'
+            columns: ['fund_id']
+            referencedRelation: 'funds'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      inbound_emails: {
+        Row: {
+          id: string
+          fund_id: string
+          company_id: string | null
+          from_address: string
+          subject: string | null
+          received_at: string
+          raw_payload: Json | null
+          processing_status: 'pending' | 'processing' | 'success' | 'failed' | 'needs_review'
+          processing_error: string | null
+          claude_response: Json | null
+          metrics_extracted: number
+          attachments_count: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          fund_id: string
+          company_id?: string | null
+          from_address: string
+          subject?: string | null
+          received_at?: string
+          raw_payload?: Json | null
+          processing_status?: 'pending' | 'processing' | 'success' | 'failed' | 'needs_review'
+          processing_error?: string | null
+          claude_response?: Json | null
+          metrics_extracted?: number
+          attachments_count?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          fund_id?: string
+          company_id?: string | null
+          from_address?: string
+          subject?: string | null
+          received_at?: string
+          raw_payload?: Json | null
+          processing_status?: 'pending' | 'processing' | 'success' | 'failed' | 'needs_review'
+          processing_error?: string | null
+          claude_response?: Json | null
+          metrics_extracted?: number
+          attachments_count?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'inbound_emails_fund_id_fkey'
+            columns: ['fund_id']
+            referencedRelation: 'funds'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'inbound_emails_company_id_fkey'
+            columns: ['company_id']
+            referencedRelation: 'companies'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      metrics: {
+        Row: {
+          id: string
+          company_id: string
+          fund_id: string
+          name: string
+          slug: string
+          description: string | null
+          unit: string | null
+          unit_position: 'prefix' | 'suffix'
+          value_type: 'number' | 'currency' | 'percentage' | 'text'
+          reporting_cadence: 'quarterly' | 'monthly' | 'annual'
+          display_order: number
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          fund_id: string
+          name: string
+          slug: string
+          description?: string | null
+          unit?: string | null
+          unit_position?: 'prefix' | 'suffix'
+          value_type?: 'number' | 'currency' | 'percentage' | 'text'
+          reporting_cadence?: 'quarterly' | 'monthly' | 'annual'
+          display_order?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          fund_id?: string
+          name?: string
+          slug?: string
+          description?: string | null
+          unit?: string | null
+          unit_position?: 'prefix' | 'suffix'
+          value_type?: 'number' | 'currency' | 'percentage' | 'text'
+          reporting_cadence?: 'quarterly' | 'monthly' | 'annual'
+          display_order?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'metrics_company_id_fkey'
+            columns: ['company_id']
+            referencedRelation: 'companies'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'metrics_fund_id_fkey'
+            columns: ['fund_id']
+            referencedRelation: 'funds'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      metric_values: {
+        Row: {
+          id: string
+          metric_id: string
+          company_id: string
+          fund_id: string
+          period_label: string
+          period_year: number
+          period_quarter: number | null
+          period_month: number | null
+          value_number: number | null
+          value_text: string | null
+          confidence: 'high' | 'medium' | 'low'
+          source_email_id: string | null
+          notes: string | null
+          is_manually_entered: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          metric_id: string
+          company_id: string
+          fund_id: string
+          period_label: string
+          period_year: number
+          period_quarter?: number | null
+          period_month?: number | null
+          value_number?: number | null
+          value_text?: string | null
+          confidence?: 'high' | 'medium' | 'low'
+          source_email_id?: string | null
+          notes?: string | null
+          is_manually_entered?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          metric_id?: string
+          company_id?: string
+          fund_id?: string
+          period_label?: string
+          period_year?: number
+          period_quarter?: number | null
+          period_month?: number | null
+          value_number?: number | null
+          value_text?: string | null
+          confidence?: 'high' | 'medium' | 'low'
+          source_email_id?: string | null
+          notes?: string | null
+          is_manually_entered?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'metric_values_metric_id_fkey'
+            columns: ['metric_id']
+            referencedRelation: 'metrics'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'metric_values_company_id_fkey'
+            columns: ['company_id']
+            referencedRelation: 'companies'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'metric_values_fund_id_fkey'
+            columns: ['fund_id']
+            referencedRelation: 'funds'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'metric_values_source_email_id_fkey'
+            columns: ['source_email_id']
+            referencedRelation: 'inbound_emails'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      parsing_reviews: {
+        Row: {
+          id: string
+          fund_id: string
+          email_id: string
+          metric_id: string | null
+          company_id: string | null
+          issue_type:
+            | 'new_company_detected'
+            | 'low_confidence'
+            | 'ambiguous_period'
+            | 'metric_not_found'
+            | 'company_not_identified'
+            | 'duplicate_period'
+          extracted_value: string | null
+          context_snippet: string | null
+          resolution: 'accepted' | 'rejected' | 'manually_corrected' | null
+          resolved_value: string | null
+          resolved_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          fund_id: string
+          email_id: string
+          metric_id?: string | null
+          company_id?: string | null
+          issue_type:
+            | 'new_company_detected'
+            | 'low_confidence'
+            | 'ambiguous_period'
+            | 'metric_not_found'
+            | 'company_not_identified'
+            | 'duplicate_period'
+          extracted_value?: string | null
+          context_snippet?: string | null
+          resolution?: 'accepted' | 'rejected' | 'manually_corrected' | null
+          resolved_value?: string | null
+          resolved_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          fund_id?: string
+          email_id?: string
+          metric_id?: string | null
+          company_id?: string | null
+          issue_type?:
+            | 'new_company_detected'
+            | 'low_confidence'
+            | 'ambiguous_period'
+            | 'metric_not_found'
+            | 'company_not_identified'
+            | 'duplicate_period'
+          extracted_value?: string | null
+          context_snippet?: string | null
+          resolution?: 'accepted' | 'rejected' | 'manually_corrected' | null
+          resolved_value?: string | null
+          resolved_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'parsing_reviews_fund_id_fkey'
+            columns: ['fund_id']
+            referencedRelation: 'funds'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'parsing_reviews_email_id_fkey'
+            columns: ['email_id']
+            referencedRelation: 'inbound_emails'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'parsing_reviews_metric_id_fkey'
+            columns: ['metric_id']
+            referencedRelation: 'metrics'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'parsing_reviews_company_id_fkey'
+            columns: ['company_id']
+            referencedRelation: 'companies'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+    }
+    Views: Record<string, never>
+    Functions: {
+      get_my_fund_ids: {
+        Args: Record<PropertyKey, never>
+        Returns: string[]
+      }
+    }
+    Enums: Record<string, never>
+    CompositeTypes: Record<string, never>
+  }
+}
+
+// Convenience helpers matching Supabase's generated type conventions
+export type Tables<T extends keyof Database['public']['Tables']> =
+  Database['public']['Tables'][T]['Row']
+
+export type TablesInsert<T extends keyof Database['public']['Tables']> =
+  Database['public']['Tables'][T]['Insert']
+
+export type TablesUpdate<T extends keyof Database['public']['Tables']> =
+  Database['public']['Tables'][T]['Update']
+
+// Row-level type aliases
+export type AppSettings    = Tables<'app_settings'>
+export type Fund           = Tables<'funds'>
+export type FundMember     = Tables<'fund_members'>
+export type FundSettings   = Tables<'fund_settings'>
+export type AuthorizedSender = Tables<'authorized_senders'>
+export type Company        = Tables<'companies'>
+export type InboundEmail   = Tables<'inbound_emails'>
+export type Metric         = Tables<'metrics'>
+export type MetricValue    = Tables<'metric_values'>
+export type ParsingReview  = Tables<'parsing_reviews'>
+
+// Enum-style string literals
+export type CompanyStatus      = 'active' | 'exited' | 'written-off'
+export type ProcessingStatus   = 'pending' | 'processing' | 'success' | 'failed' | 'needs_review'
+export type Confidence         = 'high' | 'medium' | 'low'
+export type ValueType          = 'number' | 'currency' | 'percentage' | 'text'
+export type UnitPosition       = 'prefix' | 'suffix'
+export type ReportingCadence   = 'quarterly' | 'monthly' | 'annual'
+export type IssueType          =
+  | 'new_company_detected'
+  | 'low_confidence'
+  | 'ambiguous_period'
+  | 'metric_not_found'
+  | 'company_not_identified'
+  | 'duplicate_period'
+export type ReviewResolution   = 'accepted' | 'rejected' | 'manually_corrected'
