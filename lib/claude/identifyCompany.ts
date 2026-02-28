@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 
-const MODEL = 'claude-sonnet-4-5'
+const DEFAULT_MODEL = 'claude-sonnet-4-5'
 
 export interface CompanyRef {
   id: string
@@ -19,12 +19,13 @@ export async function identifyCompany(
   subject: string,
   bodyExcerpt: string,
   companies: CompanyRef[],
-  claudeApiKey: string
+  claudeApiKey: string,
+  model: string = DEFAULT_MODEL
 ): Promise<IdentifyCompanyResult> {
   const client = new Anthropic({ apiKey: claudeApiKey })
   const prompt = buildPrompt(subject, bodyExcerpt, companies)
 
-  const raw = await callWithRetry(client, prompt)
+  const raw = await callWithRetry(client, prompt, model)
   return raw
 }
 
@@ -70,14 +71,15 @@ const STRICT_SUFFIX =
 
 async function callWithRetry(
   client: Anthropic,
-  prompt: string
+  prompt: string,
+  model: string
 ): Promise<IdentifyCompanyResult> {
-  const first = await call(client, prompt)
+  const first = await call(client, prompt, model)
   const parsed = tryParse(first)
   if (parsed) return parsed
 
   // Retry with stricter instruction appended
-  const second = await call(client, prompt + STRICT_SUFFIX)
+  const second = await call(client, prompt + STRICT_SUFFIX, model)
   const reparsed = tryParse(second)
   if (reparsed) return reparsed
 
@@ -86,9 +88,9 @@ async function callWithRetry(
   )
 }
 
-async function call(client: Anthropic, userPrompt: string): Promise<string> {
+async function call(client: Anthropic, userPrompt: string, model: string): Promise<string> {
   const message = await client.messages.create({
-    model: MODEL,
+    model,
     max_tokens: 256,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userPrompt }],

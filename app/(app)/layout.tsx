@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { LayoutDashboard, Building2, Mail, AlertCircle, Upload, Settings, LogOut } from 'lucide-react'
+import { LayoutDashboard, Building2, Mail, Upload, Settings, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -10,8 +10,7 @@ import { DemoSeeder } from './demo-seeder'
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/companies', label: 'Companies', icon: Building2 },
-  { href: '/emails', label: 'Email Log', icon: Mail },
-  { href: '/review', label: 'Review Queue', icon: AlertCircle, badge: true },
+  { href: '/emails', label: 'Email Log', icon: Mail, badge: true },
   { href: '/import', label: 'Import', icon: Upload },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]

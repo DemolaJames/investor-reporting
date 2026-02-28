@@ -128,6 +128,8 @@ export type Database = {
           google_drive_folder_name: string | null
           google_client_id: string | null
           google_client_secret_encrypted: string | null
+          claude_model: string
+          ai_summary_prompt: string | null
           created_at: string
           updated_at: string
         }
@@ -143,6 +145,8 @@ export type Database = {
           google_refresh_token_encrypted?: string | null
           google_drive_folder_id?: string | null
           google_drive_folder_name?: string | null
+          claude_model?: string
+          ai_summary_prompt?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -158,6 +162,8 @@ export type Database = {
           google_refresh_token_encrypted?: string | null
           google_drive_folder_id?: string | null
           google_drive_folder_name?: string | null
+          claude_model?: string
+          ai_summary_prompt?: string | null
           created_at?: string
           updated_at?: string
         }

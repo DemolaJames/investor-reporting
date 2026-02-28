@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getClaudeApiKey } from '@/lib/pipeline/processEmail'
+import { getClaudeApiKey, getClaudeModel } from '@/lib/pipeline/processEmail'
 import {
   extractAttachmentText,
   type PostmarkPayload,
@@ -64,7 +64,7 @@ export async function POST(
 
   if (!company) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // --- Claude API key ---
+  // --- Claude API key + model + custom prompt ---
   let claudeApiKey: string
   try {
     claudeApiKey = await getClaudeApiKey(admin, company.fund_id)
@@ -73,6 +73,14 @@ export async function POST(
       error: 'Claude API key not configured. Add one in Settings to enable AI summaries.',
     }, { status: 400 })
   }
+  const claudeModel = await getClaudeModel(admin, company.fund_id)
+
+  const { data: promptSettings } = await admin
+    .from('fund_settings')
+    .select('ai_summary_prompt')
+    .eq('fund_id', company.fund_id)
+    .maybeSingle()
+  const customPrompt = (promptSettings as unknown as { ai_summary_prompt: string | null } | null)?.ai_summary_prompt ?? null
 
   // --- Metrics + values ---
   const { data: metrics } = await admin
@@ -202,7 +210,19 @@ export async function POST(
     })
   }
 
-  let promptText = `You are a senior venture capital analyst preparing a portfolio review memo. Your job is to analyze this company's performance and identify what matters most for the investment team.
+  const DEFAULT_TASK_PROMPT = `Write a concise analyst summary covering:
+
+1. **Current Status** — How is the company performing right now? Reference specific numbers.
+2. **Trends** — What direction are the key metrics heading? Growth rates, acceleration or deceleration.
+3. **Progress & Positives** — What's going well? Milestones, improvements, or strong execution.
+4. **Challenges & Risks** — What concerns you? Declining metrics, missing data, red flags.
+5. **Key Follow-ups** — What should the investment team ask about or monitor next?
+
+Keep it to 2-4 short paragraphs. Be direct and analytical, not promotional. Use specific numbers. Do not use markdown formatting — write in plain prose paragraphs.`
+
+  const taskPrompt = customPrompt ?? DEFAULT_TASK_PROMPT
+
+  let promptText = `You are a senior venture capital analyst at a growth-stage fund preparing an internal portfolio review memo for the investment committee. You think in terms of unit economics, growth efficiency, cash runway, and milestone progress. Your job is to surface what matters for the next board conversation and flag anything that warrants immediate attention.
 
 Company: ${company.name}
 ${company.stage ? `Stage: ${company.stage}` : ''}
@@ -238,17 +258,9 @@ ${previousSummariesBlock}`
   promptText += `
 
 === YOUR TASK ===
-Write a concise analyst summary covering:
+${taskPrompt}
 
-1. **Current Status** — How is the company performing right now? Reference specific numbers.
-2. **Trends** — What direction are the key metrics heading? Growth rates, acceleration or deceleration.
-3. **Progress & Positives** — What's going well? Milestones, improvements, or strong execution.
-4. **Challenges & Risks** — What concerns you? Declining metrics, missing data, red flags.
-5. **Key Follow-ups** — What should the investment team ask about or monitor next?
-
-${previousSummariesBlock ? 'Build on your previous analysis — note what has changed since your last review. Avoid repeating the same observations unless they remain critical.' : 'This is the first analysis for this company, so base it entirely on the available data and report content.'}
-
-Keep it to 2-4 short paragraphs. Be direct and analytical, not promotional. Use specific numbers. Do not use markdown formatting — write in plain prose paragraphs.`
+${previousSummariesBlock ? 'Build on your previous analysis — note what has changed since your last review. Avoid repeating the same observations unless they remain critical.' : 'This is the first analysis for this company, so base it entirely on the available data and report content.'}`
 
   // -----------------------------------------------------------------------
   // Call Claude
@@ -263,7 +275,7 @@ Keep it to 2-4 short paragraphs. Be direct and analytical, not promotional. Use 
 
   try {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: claudeModel,
       max_tokens: 1000,
       messages: [{ role: 'user', content: userContent }],
     })

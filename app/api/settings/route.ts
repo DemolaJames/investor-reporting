@@ -22,7 +22,7 @@ export async function GET() {
 
   const [{ data: fund }, { data: settings }, { data: senders }] = await Promise.all([
     admin.from('funds').select('id, name').eq('id', membership.fund_id).single(),
-    admin.from('fund_settings').select('postmark_inbound_address, postmark_webhook_token, retain_resolved_reviews, resolved_reviews_ttl_days, claude_api_key_encrypted, google_refresh_token_encrypted, google_drive_folder_id, google_drive_folder_name, google_client_id, google_client_secret_encrypted').eq('fund_id', membership.fund_id).single(),
+    admin.from('fund_settings').select('postmark_inbound_address, postmark_webhook_token, retain_resolved_reviews, resolved_reviews_ttl_days, claude_api_key_encrypted, claude_model, ai_summary_prompt, google_refresh_token_encrypted, google_drive_folder_id, google_drive_folder_name, google_client_id, google_client_secret_encrypted').eq('fund_id', membership.fund_id).single(),
     admin.from('authorized_senders').select('id, email, label, created_at').eq('fund_id', membership.fund_id).order('email'),
   ])
 
@@ -32,6 +32,7 @@ export async function GET() {
     postmarkInboundAddress: settings?.postmark_inbound_address ?? '',
     postmarkWebhookToken: settings?.postmark_webhook_token ?? '',
     hasClaudeKey: !!settings?.claude_api_key_encrypted,
+    claudeModel: settings?.claude_model ?? 'claude-sonnet-4-5',
     retainResolvedReviews: settings?.retain_resolved_reviews ?? true,
     resolvedReviewsTtlDays: settings?.resolved_reviews_ttl_days ?? null,
     senders: senders ?? [],
@@ -40,6 +41,7 @@ export async function GET() {
     googleDriveFolderName: settings?.google_drive_folder_name ?? null,
     hasGoogleCredentials: !!(settings?.google_client_id && settings?.google_client_secret_encrypted) || !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
     googleClientId: settings?.google_client_id ?? '',
+    aiSummaryPrompt: settings?.ai_summary_prompt ?? null,
     isAdmin: membership.role === 'admin',
   })
 }
@@ -61,7 +63,7 @@ export async function PATCH(req: NextRequest) {
   if (!membership) return NextResponse.json({ error: 'No fund found' }, { status: 404 })
 
   const body = await req.json()
-  const { fundName, postmarkInboundAddress, claudeApiKey, retainResolvedReviews, resolvedReviewsTtlDays, googleClientId, googleClientSecret } = body
+  const { fundName, postmarkInboundAddress, claudeApiKey, claudeModel, retainResolvedReviews, resolvedReviewsTtlDays, googleClientId, googleClientSecret, aiSummaryPrompt } = body
 
   // Update fund name
   if (fundName !== undefined) {
@@ -82,6 +84,14 @@ export async function PATCH(req: NextRequest) {
 
   if (resolvedReviewsTtlDays !== undefined) {
     settingsUpdates.resolved_reviews_ttl_days = resolvedReviewsTtlDays
+  }
+
+  if (claudeModel !== undefined) {
+    settingsUpdates.claude_model = claudeModel.trim() || 'claude-sonnet-4-5'
+  }
+
+  if (aiSummaryPrompt !== undefined) {
+    settingsUpdates.ai_summary_prompt = aiSummaryPrompt?.trim() || null
   }
 
   // Update Claude API key with envelope encryption

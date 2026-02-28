@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getClaudeApiKey } from '@/lib/pipeline/processEmail'
+import { getClaudeApiKey, getClaudeModel } from '@/lib/pipeline/processEmail'
 import Anthropic from '@anthropic-ai/sdk'
 
 interface ParsedMetric {
@@ -102,13 +102,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No text provided' }, { status: 400 })
   }
 
-  // Get Claude API key
+  // Get Claude API key + model
   let claudeApiKey: string
   try {
     claudeApiKey = await getClaudeApiKey(admin, fundId)
   } catch {
     return NextResponse.json({ error: 'Claude API key not configured. Add one in Settings.' }, { status: 400 })
   }
+  const claudeModel = await getClaudeModel(admin, fundId)
 
   // Parse with Claude
   const anthropic = new Anthropic({ apiKey: claudeApiKey })
@@ -116,7 +117,7 @@ export async function POST(req: NextRequest) {
   let responseText: string
   try {
     const parseResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: claudeModel,
       max_tokens: 8192,
       messages: [{
         role: 'user',

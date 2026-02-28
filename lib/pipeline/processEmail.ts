@@ -49,8 +49,9 @@ export async function runPipeline(
   // Step 4: Extract text from email body and attachments
   const extracted = await extractAttachmentText(payload)
 
-  // Fetch the fund's (decrypted) Claude API key
+  // Fetch the fund's (decrypted) Claude API key and model preference
   const claudeApiKey = await getClaudeApiKey(supabase, fundId)
+  const claudeModel = await getClaudeModel(supabase, fundId)
 
   // Step 5: Identify the company
   const companies = await getCompanies(supabase, fundId)
@@ -59,7 +60,8 @@ export async function runPipeline(
     payload.Subject ?? '',
     extracted.emailBody,
     companies,
-    claudeApiKey
+    claudeApiKey,
+    claudeModel
   )
 
   if (identification.new_company_name) {
@@ -117,7 +119,8 @@ export async function runPipeline(
     metrics,
     pdfBase64s,
     images,
-    claudeApiKey
+    claudeApiKey,
+    claudeModel
   )
 
   // Store the raw Claude response
@@ -283,6 +286,16 @@ export async function getClaudeApiKey(supabase: Supabase, fundId: string): Promi
   }
 
   return decryptApiKey(data.claude_api_key_encrypted, data.encryption_key_encrypted)
+}
+
+export async function getClaudeModel(supabase: Supabase, fundId: string): Promise<string> {
+  const { data } = await supabase
+    .from('fund_settings')
+    .select('claude_model')
+    .eq('fund_id', fundId)
+    .single()
+
+  return data?.claude_model || 'claude-sonnet-4-5'
 }
 
 export async function getCompanies(supabase: Supabase, fundId: string): Promise<CompanyRef[]> {

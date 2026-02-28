@@ -29,6 +29,7 @@ interface Settings {
   postmarkInboundAddress: string
   postmarkWebhookToken: string
   hasClaudeKey: boolean
+  claudeModel: string
   retainResolvedReviews: boolean
   resolvedReviewsTtlDays: number | null
   senders: Sender[]
@@ -37,6 +38,7 @@ interface Settings {
   googleDriveFolderName: string | null
   hasGoogleCredentials: boolean
   googleClientId: string
+  aiSummaryPrompt: string | null
   isAdmin: boolean
 }
 
@@ -78,7 +80,8 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
 
       <FundNameSection name={settings.fundName} onSaved={load} />
-      <ClaudeKeySection hasKey={settings.hasClaudeKey} onSaved={load} />
+      <ClaudeKeySection hasKey={settings.hasClaudeKey} currentModel={settings.claudeModel} onSaved={load} />
+      <AiSummaryPromptSection currentPrompt={settings.aiSummaryPrompt} onSaved={load} />
       <PostmarkSection
         address={settings.postmarkInboundAddress}
         token={settings.postmarkWebhookToken}
@@ -139,11 +142,44 @@ function FundNameSection({ name, onSaved }: { name: string; onSaved: () => void 
 
 // ──────────────────────────── Claude Key ────────────────────────────
 
-function ClaudeKeySection({ hasKey, onSaved }: { hasKey: boolean; onSaved: () => void }) {
+function ClaudeKeySection({ hasKey, currentModel, onSaved }: { hasKey: boolean; currentModel: string; onSaved: () => void }) {
   const [newKey, setNewKey] = useState('')
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<'idle' | 'valid' | 'invalid' | 'saved'>('idle')
+
+  // Model selector state
+  const [models, setModels] = useState<{ id: string; name: string }[]>([])
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [modelsError, setModelsError] = useState<string | null>(null)
+  const [selectedModel, setSelectedModel] = useState(currentModel)
+  const [modelSaving, setModelSaving] = useState(false)
+  const [modelsFetched, setModelsFetched] = useState(false)
+
+  const fetchModels = useCallback(async () => {
+    if (modelsFetched) return
+    setModelsLoading(true)
+    setModelsError(null)
+    try {
+      const res = await fetch('/api/claude-models')
+      const data = await res.json()
+      if (data.error) setModelsError(data.error)
+      setModels(data.models ?? [])
+      setModelsFetched(true)
+    } catch {
+      setModelsError('Failed to fetch models')
+    } finally {
+      setModelsLoading(false)
+    }
+  }, [modelsFetched])
+
+  useEffect(() => {
+    if (hasKey) fetchModels()
+  }, [hasKey, fetchModels])
+
+  useEffect(() => {
+    setSelectedModel(currentModel)
+  }, [currentModel])
 
   const testKey = async () => {
     setTesting(true)
@@ -168,8 +204,21 @@ function ClaudeKeySection({ hasKey, onSaved }: { hasKey: boolean; onSaved: () =>
     if (res.ok) {
       setStatus('saved')
       setNewKey('')
+      setModelsFetched(false) // re-fetch models with new key
       onSaved()
     }
+  }
+
+  const saveModel = async (modelId: string) => {
+    setSelectedModel(modelId)
+    setModelSaving(true)
+    const res = await fetch('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ claudeModel: modelId }),
+    })
+    setModelSaving(false)
+    if (res.ok) onSaved()
   }
 
   return (
@@ -211,6 +260,115 @@ function ClaudeKeySection({ hasKey, onSaved }: { hasKey: boolean; onSaved: () =>
           <Check className="h-3 w-3" /> Key updated
         </p>
       )}
+
+      {hasKey && (
+        <div className="mt-4 pt-4 border-t">
+          <Label>Model</Label>
+          <p className="text-xs text-muted-foreground mb-2">
+            Choose which Claude model to use for report parsing, summaries, and imports.
+          </p>
+          {modelsLoading ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading models…
+            </div>
+          ) : modelsError ? (
+            <p className="text-xs text-destructive">{modelsError}</p>
+          ) : (
+            <div className="flex items-center gap-2">
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={selectedModel}
+                onChange={(e) => saveModel(e.target.value)}
+                disabled={modelSaving}
+              >
+                {models.length === 0 && (
+                  <option value={selectedModel}>{selectedModel}</option>
+                )}
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.id})
+                  </option>
+                ))}
+              </select>
+              {modelSaving && <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />}
+            </div>
+          )}
+        </div>
+      )}
+    </Section>
+  )
+}
+
+// ──────────────────────────── AI Summary Prompt ────────────────────────────
+
+const DEFAULT_AI_SUMMARY_PROMPT = `Write a concise analyst summary covering:
+
+1. **Current Status** — How is the company performing right now? Reference specific numbers.
+2. **Trends** — What direction are the key metrics heading? Growth rates, acceleration or deceleration.
+3. **Progress & Positives** — What's going well? Milestones, improvements, or strong execution.
+4. **Challenges & Risks** — What concerns you? Declining metrics, missing data, red flags.
+5. **Key Follow-ups** — What should the investment team ask about or monitor next?
+
+Keep it to 2-4 short paragraphs. Be direct and analytical, not promotional. Use specific numbers. Do not use markdown formatting — write in plain prose paragraphs.`
+
+function AiSummaryPromptSection({ currentPrompt, onSaved }: { currentPrompt: string | null; onSaved: () => void }) {
+  const [value, setValue] = useState(currentPrompt ?? DEFAULT_AI_SUMMARY_PROMPT)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const isCustomized = currentPrompt !== null
+
+  const handleSave = async () => {
+    setSaving(true)
+    const res = await fetch('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aiSummaryPrompt: value }),
+    })
+    setSaving(false)
+    if (res.ok) {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+      onSaved()
+    }
+  }
+
+  const handleReset = async () => {
+    setSaving(true)
+    const res = await fetch('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aiSummaryPrompt: null }),
+    })
+    setSaving(false)
+    if (res.ok) {
+      setValue(DEFAULT_AI_SUMMARY_PROMPT)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+      onSaved()
+    }
+  }
+
+  return (
+    <Section title="AI summary prompt">
+      <p className="text-xs text-muted-foreground mb-3">
+        Customize the analysis instructions for AI company summaries. Company data and metrics are provided automatically.
+      </p>
+      <textarea
+        className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-mono leading-relaxed"
+        rows={12}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+      />
+      <div className="flex items-center gap-2 mt-3">
+        <Button onClick={handleSave} disabled={saving} size="sm">
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : saved ? <Check className="h-3.5 w-3.5" /> : 'Save'}
+        </Button>
+        {isCustomized && (
+          <Button onClick={handleReset} disabled={saving} variant="outline" size="sm">
+            Reset to default
+          </Button>
+        )}
+      </div>
     </Section>
   )
 }

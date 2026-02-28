@@ -6,6 +6,7 @@ import { ChevronLeft } from 'lucide-react'
 import { ReprocessButton } from './reprocess-button'
 import { SaveToDriveButton } from './save-to-drive-button'
 import { CollapsibleJson } from './collapsible-json'
+import { ReviewItems } from './review-items'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,15 +49,6 @@ const STATUS_VARIANTS: Record<string, { label: string; className: string }> = {
     label: 'Needs Review',
     className: 'bg-amber-100 text-amber-800 border-amber-200',
   },
-}
-
-const ISSUE_LABELS: Record<string, string> = {
-  new_company_detected: 'New Company',
-  low_confidence: 'Low Confidence',
-  ambiguous_period: 'Ambiguous Period',
-  metric_not_found: 'Metric Not Found',
-  company_not_identified: 'Unidentified Company',
-  duplicate_period: 'Duplicate Period',
 }
 
 function fmt(dateStr: string) {
@@ -229,40 +221,7 @@ export default async function EmailDetailPage({ params }: { params: { id: string
       )}
 
       {/* Review items */}
-      {reviews.length > 0 && (
-        <section>
-          <h2 className="text-sm font-semibold mb-2">Review Items ({reviews.length})</h2>
-          <div className="space-y-2">
-            {reviews.map(r => (
-              <div
-                key={r.id}
-                className="flex items-center gap-3 text-sm rounded-lg border px-4 py-2.5"
-              >
-                <span className="font-medium">
-                  {ISSUE_LABELS[r.issue_type] ?? r.issue_type}
-                </span>
-                {r.extracted_value && (
-                  <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
-                    {r.extracted_value}
-                  </span>
-                )}
-                <span className="ml-auto text-muted-foreground">
-                  {r.resolution ? (
-                    <span className="capitalize">{r.resolution.replace(/_/g, ' ')}</span>
-                  ) : (
-                    <Link
-                      href="/review"
-                      className="underline underline-offset-2 hover:text-foreground"
-                    >
-                      Open in Review Queue
-                    </Link>
-                  )}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      <ReviewItems emailId={params.id} hasReviews={reviews.length > 0} />
 
       {/* Attachments */}
       {attachments.length > 0 && (

@@ -1,14 +1,16 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { CompanyForm } from '@/components/company-form'
-import { AlertCircle, Check, X, Pencil, Building2, RefreshCw } from 'lucide-react'
+import { Check, X, Pencil, Building2, Loader2 } from 'lucide-react'
 import type { Company } from '@/lib/types/database'
 
 // ---------------------------------------------------------------------------
@@ -45,16 +47,6 @@ const ISSUE_LABELS: Record<string, string> = {
   duplicate_period: 'Duplicate Period',
 }
 
-const ISSUE_TABS = [
-  { key: 'all', label: 'All' },
-  { key: 'new_company_detected', label: 'New Company' },
-  { key: 'low_confidence', label: 'Low Confidence' },
-  { key: 'duplicate_period', label: 'Duplicate' },
-  { key: 'ambiguous_period', label: 'Ambiguous Period' },
-  { key: 'metric_not_found', label: 'Not Found' },
-  { key: 'company_not_identified', label: 'Unidentified' },
-]
-
 const STATUS_COLORS: Record<string, string> = {
   new_company_detected: 'bg-blue-100 text-blue-800 border-blue-200',
   low_confidence: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -65,35 +57,57 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 // ---------------------------------------------------------------------------
-// Page
+// EmailReviewModal
 // ---------------------------------------------------------------------------
 
-export default function ReviewPage() {
+export function EmailReviewModal({
+  emailId,
+  open,
+  onOpenChange,
+  onResolved,
+}: {
+  emailId: string | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onResolved: () => void
+}) {
   const [data, setData] = useState<ReviewData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   const [resolving, setResolving] = useState<Record<string, boolean>>({})
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [createCompanyFor, setCreateCompanyFor] = useState<ReviewItem | null>(null)
 
   const load = useCallback(async () => {
+    if (!emailId) return
     setLoading(true)
-    setError(null)
     try {
-      const res = await fetch('/api/review')
-      if (!res.ok) throw new Error('Failed to load review queue')
+      const res = await fetch(`/api/emails/${emailId}/reviews`)
+      if (!res.ok) throw new Error('Failed to load reviews')
       setData(await res.json())
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error loading data')
+    } catch {
+      setData(null)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [emailId])
 
   useEffect(() => {
-    load()
-  }, [load])
+    if (open && emailId) {
+      load()
+    } else {
+      setData(null)
+      setEditingId(null)
+      setCreateCompanyFor(null)
+    }
+  }, [open, emailId, load])
+
+  // Check if all resolved after each action
+  useEffect(() => {
+    if (data && data.total === 0 && !loading && open) {
+      onResolved()
+    }
+  }, [data, loading, open, onResolved])
 
   async function resolve(
     item: ReviewItem,
@@ -111,7 +125,6 @@ export default function ReviewPage() {
         const d = await res.json()
         throw new Error(d.error ?? 'Failed to resolve')
       }
-      // Remove from local list
       setData(prev =>
         prev
           ? {
@@ -140,7 +153,6 @@ export default function ReviewPage() {
 
   function handleCompanyCreated(company: Company) {
     setCreateCompanyFor(null)
-    // Resolve the review as rejected (company now exists, user can re-send or wait)
     if (createCompanyFor) {
       resolve(createCompanyFor, 'accepted', company.name)
     }
@@ -148,80 +160,30 @@ export default function ReviewPage() {
 
   const items = data?.items ?? []
 
-  function tabItems(tab: string) {
-    return tab === 'all' ? items : items.filter(i => i.issue_type === tab)
-  }
-
   return (
-    <div className="p-8 max-w-5xl">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Review Queue</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Items flagged by Claude that need human review before values are written.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      </div>
+    <>
+      <Dialog open={open && !createCompanyFor} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Review Items</DialogTitle>
+          </DialogHeader>
 
-      {error && (
-        <Alert variant="destructive" className="mb-6">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Summary counts */}
-      {data && (
-        <div className="grid grid-cols-3 gap-3 mb-6 sm:grid-cols-6">
-          {Object.entries(ISSUE_LABELS).map(([key, label]) => (
-            <div key={key} className="rounded-lg border bg-card p-3 text-center">
-              <p className="text-2xl font-semibold">{data.counts[key] ?? 0}</p>
-              <p className="text-xs text-muted-foreground mt-0.5 leading-tight">{label}</p>
+          {loading && (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
-          ))}
-        </div>
-      )}
+          )}
 
-      {loading && !data && (
-        <div className="text-sm text-muted-foreground py-12 text-center">Loading…</div>
-      )}
+          {!loading && items.length === 0 && (
+            <div className="py-8 text-center">
+              <Check className="h-8 w-8 text-green-500 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">All items resolved.</p>
+            </div>
+          )}
 
-      {data && data.total === 0 && (
-        <div className="py-16 text-center">
-          <Check className="h-10 w-10 text-green-500 mx-auto mb-3" />
-          <p className="font-medium">All clear</p>
-          <p className="text-sm text-muted-foreground mt-1">No items need review.</p>
-        </div>
-      )}
-
-      {data && data.total > 0 && (
-        <Tabs defaultValue="all">
-          <TabsList className="mb-4 flex-wrap h-auto gap-1">
-            {ISSUE_TABS.filter(t => t.key === 'all' || (data.counts[t.key] ?? 0) > 0).map(t => (
-              <TabsTrigger key={t.key} value={t.key} className="gap-1.5">
-                {t.label}
-                {t.key !== 'all' && (
-                  <span className="rounded-full bg-muted text-muted-foreground px-1.5 py-0.5 text-[10px] font-mono">
-                    {data.counts[t.key]}
-                  </span>
-                )}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-
-          {ISSUE_TABS.map(t => (
-            <TabsContent key={t.key} value={t.key} className="space-y-3 mt-0">
-              {tabItems(t.key).length === 0 && (
-                <p className="text-sm text-muted-foreground py-6 text-center">
-                  No items in this category.
-                </p>
-              )}
-              {tabItems(t.key).map(item => (
+          {!loading && items.length > 0 && (
+            <div className="space-y-3">
+              {items.map(item => (
                 <ReviewCard
                   key={item.id}
                   item={item}
@@ -237,15 +199,15 @@ export default function ReviewPage() {
                   onCreateCompany={() => setCreateCompanyFor(item)}
                 />
               ))}
-            </TabsContent>
-          ))}
-        </Tabs>
-      )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Create Company Dialog */}
       <Dialog
         open={!!createCompanyFor}
-        onOpenChange={open => !open && setCreateCompanyFor(null)}
+        onOpenChange={o => !o && setCreateCompanyFor(null)}
       >
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -258,12 +220,12 @@ export default function ReviewPage() {
           />
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Review card
+// ReviewCard (ported from review page)
 // ---------------------------------------------------------------------------
 
 function ReviewCard({
@@ -358,31 +320,6 @@ function ReviewCard({
         <blockquote className="border-l-2 pl-3 text-sm text-muted-foreground italic leading-relaxed">
           {item.context_snippet}
         </blockquote>
-      )}
-
-      {/* Source email */}
-      {item.email && (
-        <div className="text-xs text-muted-foreground">
-          From{' '}
-          <span className="font-medium text-foreground">{item.email.from_address}</span>
-          {item.email.subject && (
-            <>
-              {' · '}
-              <a
-                href={`/emails/${item.email.id}`}
-                className="underline underline-offset-2 hover:text-foreground"
-              >
-                {item.email.subject}
-              </a>
-            </>
-          )}
-          {' · '}
-          {new Date(item.email.received_at).toLocaleDateString(undefined, {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-          })}
-        </div>
       )}
 
       {/* Actions */}

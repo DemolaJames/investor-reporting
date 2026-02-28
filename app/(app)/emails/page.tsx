@@ -13,7 +13,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { AlertCircle, RefreshCw, ChevronLeft, ChevronRight, HardDrive, Check, Loader2 } from 'lucide-react'
+import { AlertCircle, RefreshCw, ChevronLeft, ChevronRight, HardDrive, Check, Loader2, X } from 'lucide-react'
+import { EmailReviewModal } from '@/components/email-review-modal'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -87,6 +88,10 @@ export default function EmailsPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [page, setPage] = useState(1)
+
+  // Review modal
+  const [reviewModalEmailId, setReviewModalEmailId] = useState<string | null>(null)
+  const [dismissing, setDismissing] = useState<Record<string, boolean>>({})
 
   // Bulk save to drive
   const [savingToDrive, setSavingToDrive] = useState(false)
@@ -177,6 +182,22 @@ export default function EmailsPage() {
       setDriveError(err instanceof Error ? err.message : 'Failed to save to Drive')
     } finally {
       setSavingToDrive(false)
+    }
+  }
+
+  async function dismissReviews(emailId: string) {
+    setDismissing(prev => ({ ...prev, [emailId]: true }))
+    try {
+      const res = await fetch(`/api/emails/${emailId}/reviews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'dismiss_all' }),
+      })
+      if (res.ok) load(page)
+    } catch {
+      // ignore
+    } finally {
+      setDismissing(prev => ({ ...prev, [emailId]: false }))
     }
   }
 
@@ -304,19 +325,22 @@ export default function EmailsPage() {
               <th className="text-right px-4 py-3 font-medium text-muted-foreground w-20">
                 Metrics
               </th>
+              <th className="text-right px-4 py-3 font-medium text-muted-foreground w-24">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {loading && !data && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
+                <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">
                   Loading…
                 </td>
               </tr>
             )}
             {!loading && data?.items.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
+                <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">
                   No emails found.
                 </td>
               </tr>
@@ -337,6 +361,16 @@ export default function EmailsPage() {
                 <td className="px-4 py-3">
                   {email.company ? (
                     <span>{email.company.name}</span>
+                  ) : email.processing_status === 'needs_review' ? (
+                    <button
+                      className="text-amber-600 hover:text-amber-700 font-medium text-sm underline underline-offset-2"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setReviewModalEmailId(email.id)
+                      }}
+                    >
+                      Needs Review
+                    </button>
                   ) : (
                     <span className="text-muted-foreground italic">Unknown</span>
                   )}
@@ -346,6 +380,27 @@ export default function EmailsPage() {
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">
                   {email.metrics_extracted}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  {email.processing_status === 'needs_review' && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-muted-foreground hover:text-destructive gap-1"
+                      disabled={!!dismissing[email.id]}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        dismissReviews(email.id)
+                      }}
+                    >
+                      {dismissing[email.id] ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <X className="h-3 w-3" />
+                      )}
+                      Dismiss
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -379,6 +434,16 @@ export default function EmailsPage() {
           </div>
         </div>
       )}
+
+      <EmailReviewModal
+        emailId={reviewModalEmailId}
+        open={!!reviewModalEmailId}
+        onOpenChange={(open) => { if (!open) setReviewModalEmailId(null) }}
+        onResolved={() => {
+          setReviewModalEmailId(null)
+          load(page)
+        }}
+      />
     </div>
   )
 }

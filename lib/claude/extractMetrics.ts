@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 
-const MODEL = 'claude-sonnet-4-5'
+const DEFAULT_MODEL = 'claude-sonnet-4-5'
 
 export interface MetricDef {
   id: string
@@ -48,12 +48,13 @@ export async function extractMetrics(
   metrics: MetricDef[],
   pdfBase64s: string[],
   images: ImageInput[],
-  claudeApiKey: string
+  claudeApiKey: string,
+  model: string = DEFAULT_MODEL
 ): Promise<ExtractMetricsResult> {
   const client = new Anthropic({ apiKey: claudeApiKey })
   const { system, userContent } = buildMessage(companyName, combinedText, metrics, pdfBase64s, images)
 
-  const raw = await callWithRetry(client, system, userContent)
+  const raw = await callWithRetry(client, system, userContent, model)
   return raw
 }
 
@@ -161,15 +162,16 @@ Return:
 async function callWithRetry(
   client: Anthropic,
   system: string,
-  userContent: Anthropic.MessageParam['content']
+  userContent: Anthropic.MessageParam['content'],
+  model: string
 ): Promise<ExtractMetricsResult> {
-  const first = await call(client, system, userContent)
+  const first = await call(client, system, userContent, model)
   const parsed = tryParse(first)
   if (parsed) return parsed
 
   // Append strict instruction to the text block on retry
   const strictContent = appendStrictSuffix(userContent)
-  const second = await call(client, system, strictContent)
+  const second = await call(client, system, strictContent, model)
   const reparsed = tryParse(second)
   if (reparsed) return reparsed
 
@@ -181,10 +183,11 @@ async function callWithRetry(
 async function call(
   client: Anthropic,
   system: string,
-  userContent: Anthropic.MessageParam['content']
+  userContent: Anthropic.MessageParam['content'],
+  model: string
 ): Promise<string> {
   const message = await client.messages.create({
-    model: MODEL,
+    model,
     max_tokens: 2048,
     system,
     messages: [{ role: 'user', content: userContent }],
