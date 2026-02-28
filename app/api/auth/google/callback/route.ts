@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { encrypt } from '@/lib/crypto'
+import { getGoogleCredentials } from '@/lib/google/credentials'
 
 export async function GET(req: NextRequest) {
   const supabase = createClient()
@@ -20,11 +21,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/settings?drive_error=missing_params', req.url))
   }
 
-  // Decode state to get fund_id
+  // Decode state to get fund_id and return_to
   let fundId: string
+  let returnTo = '/settings'
   try {
     const state = JSON.parse(Buffer.from(stateParam, 'base64url').toString())
     fundId = state.fund_id
+    if (state.return_to) returnTo = state.return_to
   } catch {
     return NextResponse.redirect(new URL('/settings?drive_error=invalid_state', req.url))
   }
@@ -42,25 +45,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/settings?drive_error=forbidden', req.url))
   }
 
-  // Exchange code for tokens
-  const clientId = process.env.GOOGLE_CLIENT_ID
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET
-
-  if (!clientId || !clientSecret) {
-    return NextResponse.redirect(new URL('/settings?drive_error=not_configured', req.url))
+  // Get Google credentials from DB or env
+  const creds = await getGoogleCredentials(admin, fundId)
+  if (!creds) {
+    return NextResponse.redirect(new URL(`${returnTo}?drive_error=not_configured`, req.url))
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : 'http://localhost:3000'
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+    ? process.env.NEXT_PUBLIC_APP_URL
+    : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000'
   const redirectUri = `${baseUrl}/api/auth/google/callback`
 
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
+      client_id: creds.clientId,
+      client_secret: creds.clientSecret,
       code,
       grant_type: 'authorization_code',
       redirect_uri: redirectUri,
@@ -69,14 +72,14 @@ export async function GET(req: NextRequest) {
 
   if (!tokenRes.ok) {
     console.error('[google-oauth] Token exchange failed:', await tokenRes.text())
-    return NextResponse.redirect(new URL('/settings?drive_error=token_exchange_failed', req.url))
+    return NextResponse.redirect(new URL(`${returnTo}?drive_error=token_exchange_failed`, req.url))
   }
 
   const tokens = await tokenRes.json()
   const refreshToken = tokens.refresh_token
 
   if (!refreshToken) {
-    return NextResponse.redirect(new URL('/settings?drive_error=no_refresh_token', req.url))
+    return NextResponse.redirect(new URL(`${returnTo}?drive_error=no_refresh_token`, req.url))
   }
 
   // Encrypt and store refresh token using the fund's encryption key
@@ -87,12 +90,12 @@ export async function GET(req: NextRequest) {
     .single()
 
   if (!settings?.encryption_key_encrypted) {
-    return NextResponse.redirect(new URL('/settings?drive_error=no_encryption_key', req.url))
+    return NextResponse.redirect(new URL(`${returnTo}?drive_error=no_encryption_key`, req.url))
   }
 
   const kek = process.env.ENCRYPTION_KEY
   if (!kek) {
-    return NextResponse.redirect(new URL('/settings?drive_error=server_error', req.url))
+    return NextResponse.redirect(new URL(`${returnTo}?drive_error=server_error`, req.url))
   }
 
   // Decrypt the DEK, then encrypt the refresh token with it
@@ -105,5 +108,6 @@ export async function GET(req: NextRequest) {
     .update({ google_refresh_token_encrypted: encryptedRefreshToken })
     .eq('fund_id', fundId)
 
-  return NextResponse.redirect(new URL('/settings?drive_connected=true', req.url))
+  const separator = returnTo.includes('?') ? '&' : '?'
+  return NextResponse.redirect(new URL(`${returnTo}${separator}drive_connected=true`, req.url))
 }

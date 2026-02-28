@@ -9,17 +9,37 @@ export default async function Home() {
 
   if (!user) redirect('/auth')
 
-  // Check if user is a member of any fund (via RLS — only returns their funds)
-  const { data: fundSettings } = await supabase
-    .from('fund_settings')
-    .select('id')
-    .limit(1)
+  const admin = createAdminClient()
+
+  // Check if user is a member of any fund
+  const { data: membership } = await admin
+    .from('fund_members')
+    .select('fund_id')
+    .eq('user_id', user.id)
     .maybeSingle()
 
-  if (fundSettings) redirect('/dashboard')
+  if (membership) {
+    // Check if onboarding is complete (has postmark + senders)
+    const { data: settings } = await admin
+      .from('fund_settings')
+      .select('postmark_inbound_address')
+      .eq('fund_id', membership.fund_id)
+      .maybeSingle()
+
+    const { count: senderCount } = await admin
+      .from('authorized_senders')
+      .select('id', { count: 'exact', head: true })
+      .eq('fund_id', membership.fund_id)
+
+    if (settings?.postmark_inbound_address && senderCount && senderCount > 0) {
+      redirect('/dashboard')
+    }
+
+    // Incomplete onboarding — send back to finish
+    redirect('/onboarding')
+  }
 
   // Check for pending join requests
-  const admin = createAdminClient()
   const { data: pendingRequest } = await admin
     .from('fund_join_requests')
     .select('id')

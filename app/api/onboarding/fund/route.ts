@@ -4,6 +4,59 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { encrypt } from '@/lib/crypto'
 import { randomBytes } from 'crypto'
 
+// GET — check onboarding status so the UI can resume where the user left off
+export async function GET() {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const admin = createAdminClient()
+
+  // Check if user already has a fund
+  const { data: membership } = await admin
+    .from('fund_members')
+    .select('fund_id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (!membership) {
+    return NextResponse.json({ step: 1, fundId: null, webhookToken: null })
+  }
+
+  const fundId = membership.fund_id
+
+  // Get fund settings to determine progress
+  const { data: settings } = await admin
+    .from('fund_settings')
+    .select('postmark_inbound_address, postmark_webhook_token')
+    .eq('fund_id', fundId)
+    .maybeSingle()
+
+  if (!settings) {
+    return NextResponse.json({ step: 1, fundId: null, webhookToken: null })
+  }
+
+  // Check if senders are configured
+  const { count: senderCount } = await admin
+    .from('authorized_senders')
+    .select('id', { count: 'exact', head: true })
+    .eq('fund_id', fundId)
+
+  const webhookToken = settings.postmark_webhook_token
+
+  if (!settings.postmark_inbound_address) {
+    return NextResponse.json({ step: 2, fundId, webhookToken })
+  }
+
+  if (!senderCount || senderCount === 0) {
+    return NextResponse.json({ step: 3, fundId, webhookToken })
+  }
+
+  // Fully complete — redirect to dashboard
+  return NextResponse.json({ step: 'complete', fundId, webhookToken })
+}
+
+// POST — create fund (idempotent: returns existing fund if user already has one)
 export async function POST(req: NextRequest) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -15,6 +68,41 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = createAdminClient()
+
+  // Check if user already has a fund — return it instead of creating a duplicate
+  const { data: existing } = await admin
+    .from('fund_members')
+    .select('fund_id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (existing) {
+    // Update fund name and API key on the existing fund
+    await admin.from('funds').update({ name: fundName.trim() }).eq('id', existing.fund_id)
+
+    const kek = process.env.ENCRYPTION_KEY
+    if (kek) {
+      const dek = randomBytes(32).toString('hex')
+      await admin
+        .from('fund_settings')
+        .update({
+          claude_api_key_encrypted: encrypt(claudeApiKey.trim(), dek),
+          encryption_key_encrypted: encrypt(dek, kek),
+        })
+        .eq('fund_id', existing.fund_id)
+    }
+
+    const { data: settings } = await admin
+      .from('fund_settings')
+      .select('postmark_webhook_token')
+      .eq('fund_id', existing.fund_id)
+      .single()
+
+    return NextResponse.json({
+      fundId: existing.fund_id,
+      webhookToken: settings?.postmark_webhook_token,
+    })
+  }
 
   // Extract email domain for fund-level domain matching
   const emailDomain = user.email?.split('@')[1]?.toLowerCase() || null

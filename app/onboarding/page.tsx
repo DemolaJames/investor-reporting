@@ -1,15 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { Suspense, useCallback, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { CheckCircle2, Circle, Loader2, X, Plus, Building2 } from 'lucide-react'
+import { CheckCircle2, Circle, Loader2, X, Plus, Building2, HardDrive } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,7 +36,8 @@ interface MatchingFund {
 const STEPS = [
   { n: 1, label: 'Fund setup' },
   { n: 2, label: 'Email integration' },
-  { n: 3, label: 'Authorized senders' },
+  { n: 3, label: 'Senders' },
+  { n: 4, label: 'Google Drive' },
 ]
 
 function StepIndicator({ current }: { current: number }) {
@@ -77,8 +77,20 @@ function StepIndicator({ current }: { current: number }) {
 // ---------------------------------------------------------------------------
 
 export default function OnboardingPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    }>
+      <OnboardingContent />
+    </Suspense>
+  )
+}
+
+function OnboardingContent() {
   const router = useRouter()
-  const supabase = createClient()
+  const searchParams = useSearchParams()
 
   const [loading, setLoading] = useState(true)
   const [matchingFund, setMatchingFund] = useState<MatchingFund | null>(null)
@@ -87,21 +99,37 @@ export default function OnboardingPage() {
   const [state, setState] = useState<OnboardingState>({ fundId: null, webhookToken: null })
 
   const detectFund = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user?.email) {
-      setMode('create')
-      setLoading(false)
-      return
+    // Check if returning from Google Drive OAuth
+    const driveConnected = searchParams.get('drive_connected') === 'true'
+
+    // Check if the user has an in-progress onboarding to resume
+    const statusRes = await fetch('/api/onboarding/fund')
+    if (statusRes.ok) {
+      const status = await statusRes.json()
+      if (status.step === 'complete' && !driveConnected) {
+        router.push('/dashboard')
+        return
+      }
+      if (status.fundId) {
+        setState({ fundId: status.fundId, webhookToken: status.webhookToken })
+
+        if (driveConnected) {
+          // Returning from Google OAuth — go to step 4 with success
+          setStep(4)
+        } else if (status.step === 'complete') {
+          // All required steps done, show optional Google Drive step
+          setStep(4)
+        } else if (typeof status.step === 'number' && status.step > 1) {
+          setStep(status.step)
+        }
+
+        setMode('create')
+        setLoading(false)
+        return
+      }
     }
 
-    const domain = user.email.split('@')[1]?.toLowerCase()
-    if (!domain) {
-      setMode('create')
-      setLoading(false)
-      return
-    }
-
-    // Check for existing funds with matching domain (via API)
+    // No existing fund — check for domain-matching fund to join
     const res = await fetch('/api/onboarding/check-domain')
     if (res.ok) {
       const data = await res.json()
@@ -115,7 +143,7 @@ export default function OnboardingPage() {
 
     setMode('create')
     setLoading(false)
-  }, [supabase])
+  }, [router, searchParams])
 
   useEffect(() => { detectFund() }, [detectFund])
 
@@ -161,6 +189,12 @@ export default function OnboardingPage() {
         {step === 3 && state.fundId && (
           <Step3
             fundId={state.fundId}
+            onComplete={() => setStep(4)}
+          />
+        )}
+        {step === 4 && (
+          <Step4
+            driveConnected={searchParams.get('drive_connected') === 'true'}
             onComplete={() => router.push('/dashboard')}
           />
         )}
@@ -419,8 +453,11 @@ function Step2({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-  const webhookUrl = `${appUrl}/api/inbound-email?token=${webhookToken}`
+  const defaultBase = typeof window !== 'undefined'
+    ? (process.env.NEXT_PUBLIC_APP_URL || window.location.origin)
+    : ''
+  const [baseUrl, setBaseUrl] = useState(defaultBase)
+  const webhookUrl = `${baseUrl}/api/inbound-email?token=${webhookToken}`
 
   async function submit() {
     if (!inboundAddress.trim()) {
@@ -461,10 +498,22 @@ function Step2({
         )}
 
         <div className="space-y-2">
+          <Label>Webhook base URL</Label>
+          <Input
+            value={baseUrl}
+            onChange={e => setBaseUrl(e.target.value)}
+            placeholder="https://your-app.vercel.app"
+          />
+          <p className="text-xs text-muted-foreground">
+            For local development, use your ngrok or tunnel URL (e.g. https://abc123.ngrok.io).
+          </p>
+        </div>
+
+        <div className="space-y-2">
           <Label>Your webhook URL</Label>
           <div className="flex items-center gap-2">
             <code className="flex-1 bg-muted rounded-md px-3 py-2 text-xs break-all font-mono">
-              {webhookUrl || 'Set NEXT_PUBLIC_APP_URL in your environment'}
+              {webhookUrl}
             </code>
             <Button
               variant="outline"
@@ -624,11 +673,168 @@ function Step3({ fundId, onComplete }: { fundId: string; onComplete: () => void 
 
         <Button className="w-full" onClick={submit} disabled={saving}>
           {saving ? (
-            <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Finishing setup…</>
+            <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Saving…</>
           ) : (
-            'Finish setup'
+            'Next →'
           )}
         </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Step 4: Google Drive (optional)
+// ---------------------------------------------------------------------------
+
+function Step4({
+  driveConnected,
+  onComplete,
+}: {
+  driveConnected: boolean
+  onComplete: () => void
+}) {
+  const [configured, setConfigured] = useState(false)
+  const [connectError, setConnectError] = useState<string | null>(null)
+
+  // Credential entry
+  const [clientId, setClientId] = useState('')
+  const [clientSecret, setClientSecret] = useState('')
+  const [savingCreds, setSavingCreds] = useState(false)
+
+  // Check if credentials exist (DB or env)
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then(data => setConfigured(!!data.hasGoogleCredentials))
+      .catch(() => setConfigured(false))
+  }, [])
+
+  async function saveCredentials() {
+    if (!clientId.trim() || !clientSecret.trim()) return
+    setSavingCreds(true)
+    setConnectError(null)
+    const res = await fetch('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        googleClientId: clientId.trim(),
+        googleClientSecret: clientSecret.trim(),
+      }),
+    })
+    setSavingCreds(false)
+    if (res.ok) {
+      setConfigured(true)
+    } else {
+      const data = await res.json().catch(() => ({}))
+      setConnectError(data.error || 'Failed to save credentials')
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Google Drive</CardTitle>
+        <CardDescription>
+          Optionally connect Google Drive to automatically save email attachments and reports to a folder.
+          You can always set this up later in Settings.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {driveConnected ? (
+          <div className="flex items-center gap-3 p-4 rounded-lg border bg-muted/50">
+            <CheckCircle2 className="h-6 w-6 text-emerald-500 shrink-0" />
+            <div>
+              <p className="font-medium text-sm">Google Drive connected</p>
+              <p className="text-xs text-muted-foreground">
+                You can choose a specific folder in Settings after setup.
+              </p>
+            </div>
+          </div>
+        ) : !configured ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 p-4 rounded-lg border border-dashed">
+              <HardDrive className="h-6 w-6 text-muted-foreground shrink-0" />
+              <div className="flex-1">
+                <p className="font-medium text-sm">Save reports to Google Drive</p>
+                <p className="text-xs text-muted-foreground">
+                  Enter your Google OAuth credentials to get started.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div>
+                <Label>Client ID</Label>
+                <Input
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  placeholder="123456789.apps.googleusercontent.com"
+                />
+              </div>
+              <div>
+                <Label>Client secret</Label>
+                <Input
+                  type="password"
+                  value={clientSecret}
+                  onChange={(e) => setClientSecret(e.target.value)}
+                  placeholder="GOCSPX-..."
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Create credentials at{' '}
+                <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="underline">
+                  Google Cloud Console
+                </a>
+                . Add <code className="text-[11px] bg-muted px-1 rounded">{typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/google/callback</code> as an authorized redirect URI.
+              </p>
+              <Button
+                className="w-full"
+                variant="outline"
+                onClick={saveCredentials}
+                disabled={savingCreds || !clientId.trim() || !clientSecret.trim()}
+              >
+                {savingCreds ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Save credentials
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 p-4 rounded-lg border border-dashed">
+            <HardDrive className="h-6 w-6 text-muted-foreground shrink-0" />
+            <div className="flex-1">
+              <p className="font-medium text-sm">Save reports to Google Drive</p>
+              <p className="text-xs text-muted-foreground">
+                Credentials configured. Connect your Google account to get started.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {connectError && (
+          <Alert variant="destructive">
+            <AlertDescription>{connectError}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="space-y-2">
+          {!driveConnected && configured && (
+            <Button
+              className="w-full"
+              variant="outline"
+              onClick={() => {
+                window.location.href = '/api/auth/google?return_to=/onboarding'
+              }}
+            >
+              <HardDrive className="h-4 w-4 mr-2" />
+              Connect Google Drive
+            </Button>
+          )}
+
+          <Button className="w-full" onClick={onComplete}>
+            {driveConnected ? 'Finish setup' : 'Skip for now'}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )

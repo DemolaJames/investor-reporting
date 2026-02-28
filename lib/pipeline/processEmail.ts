@@ -11,6 +11,7 @@ import {
 } from '@/lib/claude/extractMetrics'
 import { decryptApiKey, decrypt } from '@/lib/crypto'
 import { getAccessToken, findOrCreateFolder, uploadFile } from '@/lib/google/drive'
+import { getGoogleCredentials } from '@/lib/google/credentials'
 import type { Json, IssueType, ProcessingStatus } from '@/lib/types/database'
 
 type Supabase = ReturnType<typeof createAdminClient>
@@ -428,7 +429,9 @@ async function saveToGoogleDrive(
   const dek = decrypt(settings.encryption_key_encrypted, kek)
   const refreshToken = decrypt(settings.google_refresh_token_encrypted, dek)
 
-  const accessToken = await getAccessToken(refreshToken)
+  // Get Google OAuth credentials (DB first, then env vars)
+  const creds = await getGoogleCredentials(supabase, fundId)
+  const accessToken = await getAccessToken(refreshToken, creds?.clientId, creds?.clientSecret)
   const rootFolderId = settings.google_drive_folder_id
 
   // Find or create company subfolder

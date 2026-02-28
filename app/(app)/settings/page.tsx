@@ -35,6 +35,8 @@ interface Settings {
   googleDriveConnected: boolean
   googleDriveFolderId: string | null
   googleDriveFolderName: string | null
+  hasGoogleCredentials: boolean
+  googleClientId: string
   isAdmin: boolean
 }
 
@@ -86,6 +88,8 @@ export default function SettingsPage() {
         connected={settings.googleDriveConnected}
         folderId={settings.googleDriveFolderId}
         folderName={settings.googleDriveFolderName}
+        hasCredentials={settings.hasGoogleCredentials}
+        clientId={settings.googleClientId}
         onChanged={load}
       />
       <SendersSection senders={settings.senders} onChanged={load} />
@@ -225,10 +229,10 @@ function PostmarkSection({
   const [addr, setAddr] = useState(address)
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
+  const defaultBase = typeof window !== 'undefined' ? window.location.origin : ''
+  const [baseUrl, setBaseUrl] = useState(defaultBase)
 
-  const webhookUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/api/inbound-email?token=${token}`
-    : ''
+  const webhookUrl = `${baseUrl}/api/inbound-email?token=${token}`
 
   const handleSave = async () => {
     setSaving(true)
@@ -265,19 +269,32 @@ function PostmarkSection({
         </div>
 
         {token && (
-          <div>
-            <Label>Webhook URL</Label>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 text-xs bg-muted rounded px-3 py-2 truncate block">
-                {webhookUrl}
-              </code>
-              <Button onClick={copyWebhookUrl} variant="outline" size="icon" className="shrink-0 h-8 w-8">
-                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-              </Button>
+          <div className="space-y-2">
+            <div>
+              <Label>Webhook base URL</Label>
+              <Input
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://your-app.vercel.app"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                For local development, use your ngrok or tunnel URL (e.g. https://abc123.ngrok.io).
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Paste this URL into Postmark&#39;s inbound webhook settings.
-            </p>
+            <div>
+              <Label>Webhook URL</Label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xs bg-muted rounded px-3 py-2 truncate block">
+                  {webhookUrl}
+                </code>
+                <Button onClick={copyWebhookUrl} variant="outline" size="icon" className="shrink-0 h-8 w-8">
+                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Paste this URL into Postmark&#39;s inbound webhook settings.
+              </p>
+            </div>
           </div>
         )}
       </div>
@@ -297,11 +314,15 @@ function GoogleDriveSection({
   connected,
   folderId,
   folderName,
+  hasCredentials,
+  clientId: existingClientId,
   onChanged,
 }: {
   connected: boolean
   folderId: string | null
   folderName: string | null
+  hasCredentials: boolean
+  clientId: string
   onChanged: () => void
 }) {
   const [browsing, setBrowsing] = useState(false)
@@ -311,6 +332,34 @@ function GoogleDriveSection({
   const [breadcrumbs, setBreadcrumbs] = useState<Array<{ id: string; name: string }>>([])
   const [disconnecting, setDisconnecting] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  // Credentials state
+  const [editingCreds, setEditingCreds] = useState(!hasCredentials)
+  const [newClientId, setNewClientId] = useState(existingClientId)
+  const [newClientSecret, setNewClientSecret] = useState('')
+  const [savingCreds, setSavingCreds] = useState(false)
+  const [credsSaved, setCredsSaved] = useState(false)
+
+  const saveCredentials = async () => {
+    if (!newClientId.trim() || !newClientSecret.trim()) return
+    setSavingCreds(true)
+    const res = await fetch('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        googleClientId: newClientId.trim(),
+        googleClientSecret: newClientSecret.trim(),
+      }),
+    })
+    setSavingCreds(false)
+    if (res.ok) {
+      setNewClientSecret('')
+      setEditingCreds(false)
+      setCredsSaved(true)
+      setTimeout(() => setCredsSaved(false), 2000)
+      onChanged()
+    }
+  }
 
   const loadFolders = async (parentId?: string) => {
     setLoadingFolders(true)
@@ -386,9 +435,58 @@ function GoogleDriveSection({
         <p className="text-xs text-muted-foreground mb-3">
           Connect Google Drive to automatically save email attachments and reports to a folder.
         </p>
-        <Button size="sm" onClick={() => { window.location.href = '/api/auth/google' }}>
-          Connect Google Drive
-        </Button>
+
+        {/* Credentials setup */}
+        {(editingCreds || !hasCredentials) ? (
+          <div className="space-y-3 mb-4">
+            <p className="text-xs font-medium">Google OAuth credentials</p>
+            <div className="space-y-2">
+              <div>
+                <Label>Client ID</Label>
+                <Input
+                  value={newClientId}
+                  onChange={(e) => setNewClientId(e.target.value)}
+                  placeholder="123456789.apps.googleusercontent.com"
+                />
+              </div>
+              <div>
+                <Label>Client secret</Label>
+                <Input
+                  type="password"
+                  value={newClientSecret}
+                  onChange={(e) => setNewClientSecret(e.target.value)}
+                  placeholder="GOCSPX-..."
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Create credentials at{' '}
+                <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="underline">
+                  Google Cloud Console
+                </a>
+                . Add <code className="text-[11px] bg-muted px-1 rounded">{typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/google/callback</code> as an authorized redirect URI.
+              </p>
+              <Button size="sm" onClick={saveCredentials} disabled={savingCreds || !newClientId.trim() || !newClientSecret.trim()}>
+                {savingCreds ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Save credentials'}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 mb-4">
+            <p className="text-xs text-muted-foreground flex-1">
+              Google credentials configured.
+              {credsSaved && <span className="text-emerald-600 ml-1">Saved!</span>}
+            </p>
+            <Button size="sm" variant="outline" onClick={() => setEditingCreds(true)} className="text-xs h-7">
+              Update credentials
+            </Button>
+          </div>
+        )}
+
+        {hasCredentials && (
+          <Button size="sm" onClick={() => { window.location.href = '/api/auth/google' }}>
+            Connect Google Drive
+          </Button>
+        )}
       </Section>
     )
   }

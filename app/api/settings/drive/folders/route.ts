@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { decrypt } from '@/lib/crypto'
 import { getAccessToken, listFolders } from '@/lib/google/drive'
+import { getGoogleCredentials } from '@/lib/google/credentials'
 
 export async function GET(req: NextRequest) {
   const supabase = createClient()
@@ -35,8 +36,11 @@ export async function GET(req: NextRequest) {
   const dek = decrypt(settings.encryption_key_encrypted, kek)
   const refreshToken = decrypt(settings.google_refresh_token_encrypted, dek)
 
+  // Get Google OAuth credentials (DB first, then env vars)
+  const creds = await getGoogleCredentials(admin, membership.fund_id)
+
   try {
-    const accessToken = await getAccessToken(refreshToken)
+    const accessToken = await getAccessToken(refreshToken, creds?.clientId, creds?.clientSecret)
     const parent = req.nextUrl.searchParams.get('parent') || undefined
     const folders = await listFolders(accessToken, parent)
 

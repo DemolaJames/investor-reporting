@@ -1,20 +1,24 @@
 const DRIVE_API = 'https://www.googleapis.com/drive/v3'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 
-export async function getAccessToken(refreshToken: string): Promise<string> {
-  const clientId = process.env.GOOGLE_CLIENT_ID
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET
+export async function getAccessToken(
+  refreshToken: string,
+  clientId?: string,
+  clientSecret?: string,
+): Promise<string> {
+  const id = clientId || process.env.GOOGLE_CLIENT_ID
+  const secret = clientSecret || process.env.GOOGLE_CLIENT_SECRET
 
-  if (!clientId || !clientSecret) {
-    throw new Error('Google OAuth not configured (missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET)')
+  if (!id || !secret) {
+    throw new Error('Google OAuth not configured (missing client ID or client secret)')
   }
 
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
+      client_id: id,
+      client_secret: secret,
       refresh_token: refreshToken,
       grant_type: 'refresh_token',
     }),
@@ -26,6 +30,9 @@ export async function getAccessToken(refreshToken: string): Promise<string> {
   }
 
   const data = await res.json()
+  if (!data.access_token) {
+    throw new Error('Google token refresh did not return an access token')
+  }
   return data.access_token
 }
 
