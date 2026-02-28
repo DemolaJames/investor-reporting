@@ -10,6 +10,11 @@ import {
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest) {
+  if (process.env.DEMO_MODE === 'true') {
+    console.log('[inbound-email] Skipped — demo mode is enabled')
+    return NextResponse.json({ ok: true })
+  }
+
   try {
     await handleInbound(req)
   } catch (err) {

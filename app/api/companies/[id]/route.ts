@@ -26,7 +26,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { name, aliases, stage, sector, notes, status } = body
+  const { name, aliases, tags, stage, sector, notes, status } = body
 
   if (name !== undefined && !name?.trim()) {
     return NextResponse.json({ error: 'Name cannot be empty' }, { status: 400 })
@@ -55,6 +55,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const updates: Record<string, unknown> = {}
   if (name !== undefined) updates.name = name.trim()
   if (aliases !== undefined) updates.aliases = aliases
+  if (tags !== undefined) updates.tags = tags
   if (stage !== undefined) updates.stage = stage?.trim() || null
   if (sector !== undefined) updates.sector = sector?.trim() || null
   if (notes !== undefined) updates.notes = notes?.trim() || null

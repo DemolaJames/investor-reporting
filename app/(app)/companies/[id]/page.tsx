@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import type { Company, Metric } from '@/lib/types/database'
 import { CompanyCharts } from './company-charts'
+import { CompanySummary } from './company-summary'
 
 export default async function CompanyDetailPage({
   params,
@@ -52,8 +53,11 @@ export default async function CompanyDetailPage({
         </div>
       </div>
 
+      <CompanySummary companyId={company.id} />
+
       <CompanyCharts
         companyId={company.id}
+        companyName={company.name}
         metrics={metrics ?? []}
       />
     </div>

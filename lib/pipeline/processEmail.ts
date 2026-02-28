@@ -9,7 +9,8 @@ import {
   type MetricDef,
   type ExtractMetricsResult,
 } from '@/lib/claude/extractMetrics'
-import { decryptApiKey } from '@/lib/crypto'
+import { decryptApiKey, decrypt } from '@/lib/crypto'
+import { getAccessToken, findOrCreateFolder, uploadFile } from '@/lib/google/drive'
 import type { Json, IssueType, ProcessingStatus } from '@/lib/types/database'
 
 type Supabase = ReturnType<typeof createAdminClient>
@@ -137,6 +138,13 @@ export async function runPipeline(
   // Step 8: Finalize
   const status: ProcessingStatus = reviewCount > 0 ? 'needs_review' : 'success'
   await finalizeEmail(supabase, emailId, { status, metricsExtracted: writtenCount })
+
+  // Step 9: Save to Google Drive (non-blocking)
+  try {
+    await saveToGoogleDrive(supabase, fundId, companyName, payload)
+  } catch (err) {
+    console.error('[pipeline] Google Drive save failed (non-blocking):', err)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -387,4 +395,58 @@ function isPdf(contentType: string): boolean {
 
 function isImage(contentType: string): boolean {
   return contentType.startsWith('image/')
+}
+
+// ---------------------------------------------------------------------------
+// Google Drive integration (Step 9)
+// ---------------------------------------------------------------------------
+
+async function saveToGoogleDrive(
+  supabase: Supabase,
+  fundId: string,
+  companyName: string,
+  payload: PostmarkPayload
+): Promise<void> {
+  // Check if Drive is connected
+  const { data: settings } = await supabase
+    .from('fund_settings')
+    .select('google_refresh_token_encrypted, encryption_key_encrypted, google_drive_folder_id')
+    .eq('fund_id', fundId)
+    .single()
+
+  if (
+    !settings?.google_refresh_token_encrypted ||
+    !settings?.encryption_key_encrypted ||
+    !settings?.google_drive_folder_id
+  ) {
+    return // Drive not connected, skip silently
+  }
+
+  const kek = process.env.ENCRYPTION_KEY
+  if (!kek) return
+
+  const dek = decrypt(settings.encryption_key_encrypted, kek)
+  const refreshToken = decrypt(settings.google_refresh_token_encrypted, dek)
+
+  const accessToken = await getAccessToken(refreshToken)
+  const rootFolderId = settings.google_drive_folder_id
+
+  // Find or create company subfolder
+  const companyFolderId = await findOrCreateFolder(accessToken, rootFolderId, companyName)
+
+  // Upload email body as text file
+  const dateStr = new Date().toISOString().slice(0, 10)
+  const subject = payload.Subject?.replace(/[^a-zA-Z0-9 _-]/g, '').slice(0, 60) || 'Report'
+  const emailFilename = `${dateStr}_${subject}.txt`
+
+  const emailBody = payload.TextBody || payload.HtmlBody || '(no body)'
+  await uploadFile(accessToken, companyFolderId, emailFilename, emailBody, 'text/plain')
+
+  // Upload attachments
+  if (payload.Attachments?.length) {
+    for (const att of payload.Attachments) {
+      const content = Buffer.from(att.Content, 'base64')
+      await uploadFile(accessToken, companyFolderId, att.Name, content, att.ContentType)
+    }
+  }
 }

@@ -1,14 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { CheckCircle2, Circle, Loader2, X, Plus } from 'lucide-react'
+import { CheckCircle2, Circle, Loader2, X, Plus, Building2 } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,6 +23,11 @@ interface Sender {
 interface OnboardingState {
   fundId: string | null
   webhookToken: string | null
+}
+
+interface MatchingFund {
+  id: string
+  name: string
 }
 
 // ---------------------------------------------------------------------------
@@ -72,8 +78,58 @@ function StepIndicator({ current }: { current: number }) {
 
 export default function OnboardingPage() {
   const router = useRouter()
+  const supabase = createClient()
+
+  const [loading, setLoading] = useState(true)
+  const [matchingFund, setMatchingFund] = useState<MatchingFund | null>(null)
+  const [mode, setMode] = useState<'detect' | 'join' | 'create'>('detect')
   const [step, setStep] = useState(1)
   const [state, setState] = useState<OnboardingState>({ fundId: null, webhookToken: null })
+
+  const detectFund = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.email) {
+      setMode('create')
+      setLoading(false)
+      return
+    }
+
+    const domain = user.email.split('@')[1]?.toLowerCase()
+    if (!domain) {
+      setMode('create')
+      setLoading(false)
+      return
+    }
+
+    // Check for existing funds with matching domain (via API)
+    const res = await fetch('/api/onboarding/check-domain')
+    if (res.ok) {
+      const data = await res.json()
+      if (data.fund) {
+        setMatchingFund(data.fund)
+        setMode('join')
+        setLoading(false)
+        return
+      }
+    }
+
+    setMode('create')
+    setLoading(false)
+  }, [supabase])
+
+  useEffect(() => { detectFund() }, [detectFund])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (mode === 'join' && matchingFund) {
+    return <JoinFundScreen fund={matchingFund} onCreateInstead={() => setMode('create')} />
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
@@ -108,6 +164,107 @@ export default function OnboardingPage() {
             onComplete={() => router.push('/dashboard')}
           />
         )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Join existing fund screen
+// ---------------------------------------------------------------------------
+
+function JoinFundScreen({
+  fund,
+  onCreateInstead,
+}: {
+  fund: MatchingFund
+  onCreateInstead: () => void
+}) {
+  const router = useRouter()
+  const [requesting, setRequesting] = useState(false)
+  const [requested, setRequested] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function requestJoin() {
+    setRequesting(true)
+    setError(null)
+
+    try {
+      const res = await fetch('/api/onboarding/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fundId: fund.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setRequested(true)
+      setTimeout(() => router.push('/pending'), 1500)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
+    }
+    setRequesting(false)
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
+      <div className="w-full max-w-md space-y-4">
+        <div className="text-center">
+          <h1 className="text-2xl font-semibold tracking-tight">Welcome</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            We found a fund matching your email domain.
+          </p>
+        </div>
+
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
+            {requested ? (
+              <div className="text-center py-4">
+                <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
+                <p className="font-medium">Request sent</p>
+                <p className="text-sm text-muted-foreground">Redirecting...</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 p-4 rounded-lg border bg-muted/50">
+                  <Building2 className="h-8 w-8 text-muted-foreground shrink-0" />
+                  <div>
+                    <p className="font-medium">{fund.name}</p>
+                    <p className="text-xs text-muted-foreground">Existing fund at your organization</p>
+                  </div>
+                </div>
+
+                <Button className="w-full" onClick={requestJoin} disabled={requesting}>
+                  {requesting ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Requesting...</>
+                  ) : (
+                    'Request to join'
+                  )}
+                </Button>
+
+                <p className="text-xs text-muted-foreground text-center">
+                  Your request will be reviewed by a fund administrator.
+                </p>
+
+                <div className="relative py-2">
+                  <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">or</span>
+                  </div>
+                </div>
+
+                <Button variant="outline" className="w-full" onClick={onCreateInstead}>
+                  Create a new fund instead
+                </Button>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

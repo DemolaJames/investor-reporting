@@ -17,28 +17,30 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   if (!company) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  type MetricRow = {
+    id: string; company_id: string; fund_id: string; name: string; slug: string
+    description: string | null; unit: string | null; unit_position: string
+    value_type: string; reporting_cadence: string; display_order: number
+    is_active: boolean; created_at: string
+    metric_values: { value_number: number | null; value_text: string | null; period_label: string; created_at: string }[]
+  }
+
   const { data, error } = await supabase
     .from('metrics')
     .select('*, metric_values(value_number, value_text, period_label, created_at)')
     .eq('company_id', params.id)
-    .order('display_order')
+    .order('display_order') as { data: MetricRow[] | null; error: { message: string } | null }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const metrics = (data ?? []).map(m => {
-    const values = (m.metric_values as {
-      value_number: number | null
-      value_text: string | null
-      period_label: string
-      created_at: string
-    }[] | null) ?? []
-
+    const values = m.metric_values ?? []
     const sorted = [...values].sort((a, b) => b.created_at.localeCompare(a.created_at))
     const latest = sorted[0] ?? null
 
+    const { metric_values: _, ...rest } = m
     return {
-      ...m,
-      metric_values: undefined,
+      ...rest,
       latestValue: latest ? {
         value_number: latest.value_number,
         value_text: latest.value_text,

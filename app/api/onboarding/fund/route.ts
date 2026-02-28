@@ -16,10 +16,13 @@ export async function POST(req: NextRequest) {
 
   const admin = createAdminClient()
 
+  // Extract email domain for fund-level domain matching
+  const emailDomain = user.email?.split('@')[1]?.toLowerCase() || null
+
   // Create the fund — the trigger auto-adds the creator to fund_members
   const { data: fund, error: fundError } = await admin
     .from('funds')
-    .insert({ name: fundName.trim(), created_by: user.id })
+    .insert({ name: fundName.trim(), created_by: user.id, email_domain: emailDomain })
     .select('id')
     .single()
 

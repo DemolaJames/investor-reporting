@@ -13,22 +13,43 @@ import type { Company } from '@/lib/types/database'
 
 interface Props {
   company?: Company
+  initialName?: string
   onSuccess: (company: Company) => void
   onCancel: () => void
 }
 
-export function CompanyForm({ company, onSuccess, onCancel }: Props) {
+export function CompanyForm({ company, initialName, onSuccess, onCancel }: Props) {
   const isEdit = !!company
 
-  const [name, setName] = useState(company?.name ?? '')
+  const [name, setName] = useState(company?.name ?? initialName ?? '')
   const [aliases, setAliases] = useState<string[]>(company?.aliases ?? [])
   const [aliasInput, setAliasInput] = useState('')
   const [stage, setStage] = useState(company?.stage ?? '')
   const [sector, setSector] = useState(company?.sector ?? '')
+  const [tags, setTags] = useState<string[]>(company?.tags ?? [])
+  const [tagInput, setTagInput] = useState('')
   const [notes, setNotes] = useState(company?.notes ?? '')
   const [status, setStatus] = useState(company?.status ?? 'active')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  function addTag() {
+    const trimmed = tagInput.trim()
+    if (!trimmed || tags.includes(trimmed)) return
+    setTags(prev => [...prev, trimmed])
+    setTagInput('')
+  }
+
+  function removeTag(tag: string) {
+    setTags(prev => prev.filter(t => t !== tag))
+  }
+
+  function handleTagKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      addTag()
+    }
+  }
 
   function addAlias() {
     const trimmed = aliasInput.trim()
@@ -66,6 +87,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: Props) {
         body: JSON.stringify({
           name: name.trim(),
           aliases: aliases.length > 0 ? aliases : null,
+          tags: tags.length > 0 ? tags : [],
           stage: stage.trim() || null,
           sector: sector.trim() || null,
           notes: notes.trim() || null,
@@ -131,6 +153,36 @@ export function CompanyForm({ company, onSuccess, onCancel }: Props) {
         </p>
       </div>
 
+      <div className="space-y-2">
+        <Label>Tags</Label>
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {tags.map(tag => (
+              <Badge key={tag} variant="outline" className="gap-1 pr-1">
+                {tag}
+                <button
+                  type="button"
+                  onClick={() => removeTag(tag)}
+                  className="rounded-full hover:bg-muted-foreground/20 p-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
+          </div>
+        )}
+        <Input
+          placeholder="Add tag and press Enter (e.g. Fund I)"
+          value={tagInput}
+          onChange={e => setTagInput(e.target.value)}
+          onKeyDown={handleTagKeyDown}
+          onBlur={addTag}
+        />
+        <p className="text-xs text-muted-foreground">
+          Tags for organizing companies (e.g. fund name, cohort).
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label htmlFor="stage">Stage</Label>
@@ -155,7 +207,7 @@ export function CompanyForm({ company, onSuccess, onCancel }: Props) {
       {isEdit && (
         <div className="space-y-2">
           <Label>Status</Label>
-          <Select value={status} onValueChange={setStatus}>
+          <Select value={status} onValueChange={(v) => setStatus(v as typeof status)}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>

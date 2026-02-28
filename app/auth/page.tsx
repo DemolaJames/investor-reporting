@@ -2,13 +2,13 @@
 
 import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 
 export default function AuthPage() {
@@ -50,24 +50,6 @@ function AuthForm() {
     setLoading(false)
   }
 
-  async function signUp() {
-    reset()
-    setLoading(true)
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    })
-    if (error) {
-      setError(error.message)
-    } else {
-      setInfo('Check your email for a confirmation link.')
-    }
-    setLoading(false)
-  }
-
   async function sendMagicLink() {
     if (!email.trim()) {
       setError('Enter your email address first.')
@@ -99,8 +81,8 @@ function AuthForm() {
 
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="text-lg">Welcome</CardTitle>
-            <CardDescription>Sign in to your account or create a new one.</CardDescription>
+            <CardTitle className="text-lg">Sign in</CardTitle>
+            <CardDescription>Sign in to your account to continue.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {(error || urlError) && (
@@ -127,46 +109,21 @@ function AuthForm() {
               />
             </div>
 
-            <Tabs defaultValue="password">
-              <TabsList className="w-full">
-                <TabsTrigger value="password" className="flex-1">Password</TabsTrigger>
-                <TabsTrigger value="signup" className="flex-1">Create account</TabsTrigger>
-              </TabsList>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && signIn()}
+                autoComplete="current-password"
+              />
+            </div>
 
-              <TabsContent value="password" className="space-y-3 pt-3">
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && signIn()}
-                    autoComplete="current-password"
-                  />
-                </div>
-                <Button className="w-full" onClick={signIn} disabled={loading}>
-                  {loading ? 'Signing in…' : 'Sign in'}
-                </Button>
-              </TabsContent>
-
-              <TabsContent value="signup" className="space-y-3 pt-3">
-                <div className="space-y-2">
-                  <Label htmlFor="new-password">Password</Label>
-                  <Input
-                    id="new-password"
-                    type="password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    autoComplete="new-password"
-                    placeholder="At least 8 characters"
-                  />
-                </div>
-                <Button className="w-full" onClick={signUp} disabled={loading}>
-                  {loading ? 'Creating account…' : 'Create account'}
-                </Button>
-              </TabsContent>
-            </Tabs>
+            <Button className="w-full" onClick={signIn} disabled={loading}>
+              {loading ? 'Signing in…' : 'Sign in'}
+            </Button>
 
             <div className="relative">
               <Separator />
@@ -183,6 +140,13 @@ function AuthForm() {
             >
               Send magic link
             </Button>
+
+            <p className="text-center text-sm text-muted-foreground">
+              Don&apos;t have an account?{' '}
+              <Link href="/auth/signup" className="text-primary underline underline-offset-4 hover:text-primary/80">
+                Create an account
+              </Link>
+            </p>
           </CardContent>
         </Card>
       </div>

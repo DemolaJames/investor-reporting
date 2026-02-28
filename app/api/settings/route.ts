@@ -1,0 +1,143 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { encrypt } from '@/lib/crypto'
+import { randomBytes } from 'crypto'
+
+// GET — returns fund settings (safe fields only)
+export async function GET() {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const admin = createAdminClient()
+
+  const { data: membership } = await admin
+    .from('fund_members')
+    .select('fund_id, role')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (!membership) return NextResponse.json({ error: 'No fund found' }, { status: 404 })
+
+  const [{ data: fund }, { data: settings }, { data: senders }] = await Promise.all([
+    admin.from('funds').select('id, name').eq('id', membership.fund_id).single(),
+    admin.from('fund_settings').select('postmark_inbound_address, postmark_webhook_token, retain_resolved_reviews, resolved_reviews_ttl_days, claude_api_key_encrypted, google_refresh_token_encrypted, google_drive_folder_id, google_drive_folder_name').eq('fund_id', membership.fund_id).single(),
+    admin.from('authorized_senders').select('id, email, label, created_at').eq('fund_id', membership.fund_id).order('email'),
+  ])
+
+  return NextResponse.json({
+    fundId: fund?.id,
+    fundName: fund?.name,
+    postmarkInboundAddress: settings?.postmark_inbound_address ?? '',
+    postmarkWebhookToken: settings?.postmark_webhook_token ?? '',
+    hasClaudeKey: !!settings?.claude_api_key_encrypted,
+    retainResolvedReviews: settings?.retain_resolved_reviews ?? true,
+    resolvedReviewsTtlDays: settings?.resolved_reviews_ttl_days ?? null,
+    senders: senders ?? [],
+    googleDriveConnected: !!settings?.google_refresh_token_encrypted,
+    googleDriveFolderId: settings?.google_drive_folder_id ?? null,
+    googleDriveFolderName: settings?.google_drive_folder_name ?? null,
+    isAdmin: membership.role === 'admin',
+  })
+}
+
+// PATCH — update fund settings
+export async function PATCH(req: NextRequest) {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const admin = createAdminClient()
+
+  const { data: membership } = await admin
+    .from('fund_members')
+    .select('fund_id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (!membership) return NextResponse.json({ error: 'No fund found' }, { status: 404 })
+
+  const body = await req.json()
+  const { fundName, postmarkInboundAddress, claudeApiKey, retainResolvedReviews, resolvedReviewsTtlDays } = body
+
+  // Update fund name
+  if (fundName !== undefined) {
+    if (!fundName?.trim()) return NextResponse.json({ error: 'Fund name cannot be empty' }, { status: 400 })
+    await admin.from('funds').update({ name: fundName.trim() }).eq('id', membership.fund_id)
+  }
+
+  // Update fund_settings
+  const settingsUpdates: Record<string, unknown> = {}
+
+  if (postmarkInboundAddress !== undefined) {
+    settingsUpdates.postmark_inbound_address = postmarkInboundAddress?.trim() || null
+  }
+
+  if (retainResolvedReviews !== undefined) {
+    settingsUpdates.retain_resolved_reviews = retainResolvedReviews
+  }
+
+  if (resolvedReviewsTtlDays !== undefined) {
+    settingsUpdates.resolved_reviews_ttl_days = resolvedReviewsTtlDays
+  }
+
+  // Update Claude API key with envelope encryption
+  if (claudeApiKey !== undefined && claudeApiKey.trim()) {
+    const kek = process.env.ENCRYPTION_KEY
+    if (!kek) return NextResponse.json({ error: 'Server misconfiguration: ENCRYPTION_KEY not set' }, { status: 500 })
+
+    const dek = randomBytes(32).toString('hex')
+    settingsUpdates.encryption_key_encrypted = encrypt(dek, kek)
+    settingsUpdates.claude_api_key_encrypted = encrypt(claudeApiKey.trim(), dek)
+  }
+
+  if (Object.keys(settingsUpdates).length > 0) {
+    const { error } = await admin
+      .from('fund_settings')
+      .update(settingsUpdates)
+      .eq('fund_id', membership.fund_id)
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ ok: true })
+}
+
+// DELETE — delete all fund data
+export async function DELETE(req: NextRequest) {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { confirm } = await req.json()
+  if (confirm !== 'DELETE ALL DATA') {
+    return NextResponse.json({ error: 'Confirmation text does not match' }, { status: 400 })
+  }
+
+  const admin = createAdminClient()
+
+  const { data: membership } = await admin
+    .from('fund_members')
+    .select('fund_id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (!membership) return NextResponse.json({ error: 'No fund found' }, { status: 404 })
+
+  const fundId = membership.fund_id
+
+  // Delete in dependency order
+  await admin.from('parsing_reviews').delete().eq('fund_id', fundId)
+  await admin.from('metric_values').delete().eq('fund_id', fundId)
+  await admin.from('metrics').delete().eq('fund_id', fundId)
+  await admin.from('inbound_emails').delete().eq('fund_id', fundId)
+  await admin.from('companies').delete().eq('fund_id', fundId)
+  await admin.from('authorized_senders').delete().eq('fund_id', fundId)
+  await admin.from('fund_join_requests').delete().eq('fund_id', fundId)
+  await admin.from('fund_settings').delete().eq('fund_id', fundId)
+  await admin.from('fund_members').delete().eq('fund_id', fundId)
+  await admin.from('funds').delete().eq('id', fundId)
+
+  return NextResponse.json({ ok: true })
+}

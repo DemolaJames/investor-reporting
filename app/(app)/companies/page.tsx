@@ -10,9 +10,10 @@ export default async function CompaniesPage() {
 
   const { data } = await supabase
     .from('companies')
-    .select('id, name, stage, status, sector, metrics(id), inbound_emails(received_at)')
+    .select('id, name, stage, status, sector, tags, metrics(id), inbound_emails(received_at)')
     .order('name') as { data: Array<{
       id: string; name: string; stage: string | null; status: string; sector: string | null
+      tags: string[]
       metrics: { id: string }[]; inbound_emails: { received_at: string }[]
     }> | null }
 
@@ -27,6 +28,7 @@ export default async function CompaniesPage() {
       stage: c.stage,
       status: c.status,
       sector: c.sector,
+      tags: c.tags ?? [],
       metricsCount: c.metrics?.length ?? 0,
       lastReportAt,
     }
@@ -50,6 +52,9 @@ export default async function CompaniesPage() {
             >
               <div className="flex items-center gap-3">
                 <span className="font-medium">{c.name}</span>
+                {c.tags.map(tag => (
+                  <Badge key={tag} variant="outline" className="text-[10px]">{tag}</Badge>
+                ))}
                 {c.stage && <Badge variant="secondary" className="text-[10px]">{c.stage}</Badge>}
                 {c.status !== 'active' && (
                   <Badge variant="outline" className="text-[10px]">{c.status}</Badge>

@@ -156,12 +156,12 @@ export default function EmailsPage() {
       <div className="flex flex-wrap items-end gap-3 mb-5">
         <div>
           <label className="block text-xs text-muted-foreground mb-1">Status</label>
-          <Select value={status} onValueChange={setStatus}>
+          <Select value={status || 'all'} onValueChange={v => setStatus(v === 'all' ? '' : v)}>
             <SelectTrigger className="h-8 w-40 text-sm">
               <SelectValue placeholder="All statuses" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All statuses</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="success">Success</SelectItem>
               <SelectItem value="needs_review">Needs Review</SelectItem>
               <SelectItem value="failed">Failed</SelectItem>

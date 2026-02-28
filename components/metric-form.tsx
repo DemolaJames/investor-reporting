@@ -186,7 +186,7 @@ export function MetricForm({ companyId, metric, onSuccess, onCancel }: Props) {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label>Value type</Label>
-          <Select value={valueType} onValueChange={setValueType}>
+          <Select value={valueType} onValueChange={(v) => setValueType(v as typeof valueType)}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -200,7 +200,7 @@ export function MetricForm({ companyId, metric, onSuccess, onCancel }: Props) {
         </div>
         <div className="space-y-2">
           <Label>Cadence</Label>
-          <Select value={cadence} onValueChange={setCadence}>
+          <Select value={cadence} onValueChange={(v) => setCadence(v as typeof cadence)}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>

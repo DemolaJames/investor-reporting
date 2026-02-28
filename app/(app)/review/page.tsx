@@ -252,13 +252,7 @@ export default function ReviewPage() {
             <DialogTitle>Create Company</DialogTitle>
           </DialogHeader>
           <CompanyForm
-            company={
-              createCompanyFor
-                ? ({
-                    name: createCompanyFor.extracted_value ?? '',
-                  } as Company)
-                : undefined
-            }
+            initialName={createCompanyFor?.extracted_value ?? ''}
             onSuccess={handleCompanyCreated}
             onCancel={() => setCreateCompanyFor(null)}
           />

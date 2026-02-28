@@ -164,18 +164,11 @@ export function MetricChart({ metric, values, onRefresh }: Props) {
                 const point = data[index]
                 if (!point) return <circle key={index} cx={cx} cy={cy} r={0} />
                 const color = CONFIDENCE_COLORS[point.raw.confidence] ?? chartColor
+                const isManual = point.raw.is_manually_entered
                 return (
-                  <circle
-                    key={index}
-                    cx={cx}
-                    cy={cy}
-                    r={4}
-                    fill={color}
-                    stroke="hsl(var(--background))"
-                    strokeWidth={2}
-                    className="cursor-pointer"
-                    onClick={(e: React.MouseEvent) => handleClick(point, e)}
-                  />
+                  <g key={index} className="cursor-pointer" onClick={(e: React.MouseEvent) => handleClick(point, e)}>
+                    <circle cx={cx} cy={cy} r={4} fill={isManual ? 'hsl(var(--background))' : color} stroke={color} strokeWidth={2} strokeDasharray={isManual ? '2 2' : 'none'} />
+                  </g>
                 )
               }}
               activeDot={(props: any) => {
@@ -183,18 +176,11 @@ export function MetricChart({ metric, values, onRefresh }: Props) {
                 const point = data[index]
                 if (!point) return <circle key={index} cx={cx} cy={cy} r={0} />
                 const color = CONFIDENCE_COLORS[point.raw.confidence] ?? chartColor
+                const isManual = point.raw.is_manually_entered
                 return (
-                  <circle
-                    key={index}
-                    cx={cx}
-                    cy={cy}
-                    r={6}
-                    fill={color}
-                    stroke="hsl(var(--background))"
-                    strokeWidth={2}
-                    className="cursor-pointer"
-                    onClick={(e: React.MouseEvent) => handleClick(point, e)}
-                  />
+                  <g key={index} className="cursor-pointer" onClick={(e: React.MouseEvent) => handleClick(point, e)}>
+                    <circle cx={cx} cy={cy} r={6} fill={isManual ? 'hsl(var(--background))' : color} stroke={color} strokeWidth={2} strokeDasharray={isManual ? '2 2' : 'none'} />
+                  </g>
                 )
               }}
             />
@@ -239,7 +225,10 @@ export function MetricChart({ metric, values, onRefresh }: Props) {
                 <Cell
                   key={i}
                   fill={CONFIDENCE_COLORS[entry.raw.confidence] ?? chartColor}
-                  fillOpacity={0.8}
+                  fillOpacity={entry.raw.is_manually_entered ? 0.5 : 0.8}
+                  strokeDasharray={entry.raw.is_manually_entered ? '4 2' : 'none'}
+                  stroke={entry.raw.is_manually_entered ? (CONFIDENCE_COLORS[entry.raw.confidence] ?? chartColor) : 'none'}
+                  strokeWidth={entry.raw.is_manually_entered ? 2 : 0}
                 />
               ))}
             </Bar>

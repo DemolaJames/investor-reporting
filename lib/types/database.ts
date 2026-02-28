@@ -37,6 +37,7 @@ export type Database = {
         Row: {
           id: string
           name: string
+          email_domain: string | null
           created_by: string
           created_at: string
           updated_at: string
@@ -44,6 +45,7 @@ export type Database = {
         Insert: {
           id?: string
           name: string
+          email_domain?: string | null
           created_by: string
           created_at?: string
           updated_at?: string
@@ -51,6 +53,7 @@ export type Database = {
         Update: {
           id?: string
           name?: string
+          email_domain?: string | null
           created_by?: string
           created_at?: string
           updated_at?: string
@@ -69,6 +72,7 @@ export type Database = {
           id: string
           fund_id: string
           user_id: string
+          role: string
           invited_by: string | null
           created_at: string
         }
@@ -76,6 +80,7 @@ export type Database = {
           id?: string
           fund_id: string
           user_id: string
+          role?: string
           invited_by?: string | null
           created_at?: string
         }
@@ -83,6 +88,7 @@ export type Database = {
           id?: string
           fund_id?: string
           user_id?: string
+          role?: string
           invited_by?: string | null
           created_at?: string
         }
@@ -117,6 +123,9 @@ export type Database = {
           postmark_webhook_token: string | null
           retain_resolved_reviews: boolean
           resolved_reviews_ttl_days: number | null
+          google_refresh_token_encrypted: string | null
+          google_drive_folder_id: string | null
+          google_drive_folder_name: string | null
           created_at: string
           updated_at: string
         }
@@ -129,6 +138,9 @@ export type Database = {
           postmark_webhook_token?: string | null
           retain_resolved_reviews?: boolean
           resolved_reviews_ttl_days?: number | null
+          google_refresh_token_encrypted?: string | null
+          google_drive_folder_id?: string | null
+          google_drive_folder_name?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -141,6 +153,9 @@ export type Database = {
           postmark_webhook_token?: string | null
           retain_resolved_reviews?: boolean
           resolved_reviews_ttl_days?: number | null
+          google_refresh_token_encrypted?: string | null
+          google_drive_folder_id?: string | null
+          google_drive_folder_name?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -194,6 +209,7 @@ export type Database = {
           stage: string | null
           founded_year: number | null
           notes: string | null
+          tags: string[]
           status: 'active' | 'exited' | 'written-off'
           created_at: string
           updated_at: string
@@ -207,6 +223,7 @@ export type Database = {
           stage?: string | null
           founded_year?: number | null
           notes?: string | null
+          tags?: string[]
           status?: 'active' | 'exited' | 'written-off'
           created_at?: string
           updated_at?: string
@@ -220,6 +237,7 @@ export type Database = {
           stage?: string | null
           founded_year?: number | null
           notes?: string | null
+          tags?: string[]
           status?: 'active' | 'exited' | 'written-off'
           created_at?: string
           updated_at?: string
@@ -437,6 +455,46 @@ export type Database = {
           },
         ]
       }
+      company_summaries: {
+        Row: {
+          id: string
+          company_id: string
+          fund_id: string
+          period_label: string | null
+          summary_text: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          fund_id: string
+          period_label?: string | null
+          summary_text: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          fund_id?: string
+          period_label?: string | null
+          summary_text?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'company_summaries_company_id_fkey'
+            columns: ['company_id']
+            referencedRelation: 'companies'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'company_summaries_fund_id_fkey'
+            columns: ['fund_id']
+            referencedRelation: 'funds'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       parsing_reviews: {
         Row: {
           id: string
@@ -525,6 +583,76 @@ export type Database = {
           },
         ]
       }
+      allowed_signups: {
+        Row: {
+          id: string
+          email_pattern: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          email_pattern: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          email_pattern?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      fund_join_requests: {
+        Row: {
+          id: string
+          fund_id: string
+          user_id: string
+          email: string
+          status: string
+          reviewed_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          fund_id: string
+          user_id: string
+          email: string
+          status?: string
+          reviewed_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          fund_id?: string
+          user_id?: string
+          email?: string
+          status?: string
+          reviewed_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'fund_join_requests_fund_id_fkey'
+            columns: ['fund_id']
+            referencedRelation: 'funds'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'fund_join_requests_user_id_fkey'
+            columns: ['user_id']
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'fund_join_requests_reviewed_by_fkey'
+            columns: ['reviewed_by']
+            referencedRelation: 'users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
     Views: Record<string, never>
     Functions: {
@@ -558,7 +686,10 @@ export type Company        = Tables<'companies'>
 export type InboundEmail   = Tables<'inbound_emails'>
 export type Metric         = Tables<'metrics'>
 export type MetricValue    = Tables<'metric_values'>
+export type CompanySummary = Tables<'company_summaries'>
 export type ParsingReview  = Tables<'parsing_reviews'>
+export type AllowedSignup  = Tables<'allowed_signups'>
+export type FundJoinRequest = Tables<'fund_join_requests'>
 
 // Enum-style string literals
 export type CompanyStatus      = 'active' | 'exited' | 'written-off'
