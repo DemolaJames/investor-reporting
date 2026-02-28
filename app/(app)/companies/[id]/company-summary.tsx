@@ -18,6 +18,7 @@ export function CompanySummary({ companyId }: Props) {
   const [data, setData] = useState<SummaryData | null>(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Load the latest stored summary
   const load = useCallback(async () => {
@@ -33,16 +34,17 @@ export function CompanySummary({ companyId }: Props) {
   // Generate a new summary via POST
   async function generate() {
     setGenerating(true)
+    setError(null)
     try {
       const res = await fetch(`/api/companies/${companyId}/summary`, { method: 'POST' })
+      const result = await res.json()
       if (res.ok) {
-        setData(await res.json())
+        setData(result)
       } else {
-        const err = await res.json()
-        setData({ summary: err.error ?? 'Unable to generate summary.' })
+        setError(result.error ?? 'Unable to generate summary.')
       }
     } catch {
-      setData({ summary: 'Unable to generate summary at this time.' })
+      setError('Unable to generate summary at this time.')
     } finally {
       setGenerating(false)
     }
@@ -88,6 +90,9 @@ export function CompanySummary({ companyId }: Props) {
             <div className="h-3 bg-muted rounded w-4/6" />
           </div>
         )}
+        {error && (
+          <p className="text-sm text-destructive mt-3">{error}</p>
+        )}
       </div>
     )
   }
@@ -130,6 +135,9 @@ export function CompanySummary({ companyId }: Props) {
           <div className="h-3 bg-muted rounded w-full" />
           <div className="h-3 bg-muted rounded w-5/6" />
         </div>
+      )}
+      {error && (
+        <p className="text-sm text-destructive mt-3 pt-3 border-t">{error}</p>
       )}
     </div>
   )

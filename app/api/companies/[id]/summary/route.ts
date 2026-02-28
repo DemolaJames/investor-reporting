@@ -274,12 +274,17 @@ Keep it to 2-4 short paragraphs. Be direct and analytical, not promotional. Use 
       .join('')
 
     // Persist the summary
-    await admin.from('company_summaries').insert({
+    const { error: insertError } = await admin.from('company_summaries').insert({
       company_id: params.id,
       fund_id: company.fund_id,
       period_label: currentPeriodLabel,
       summary_text: summaryText,
     })
+
+    if (insertError) {
+      console.error('[company-summary] DB insert error:', insertError)
+      // Still return the summary even if persist fails
+    }
 
     return NextResponse.json({
       summary: summaryText,
@@ -287,7 +292,10 @@ Keep it to 2-4 short paragraphs. Be direct and analytical, not promotional. Use 
       generated_at: new Date().toISOString(),
     })
   } catch (err) {
-    console.error('[company-summary] Claude error:', err)
-    return NextResponse.json({ error: 'Unable to generate summary at this time.' }, { status: 500 })
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[company-summary] Claude error:', message, err)
+    return NextResponse.json({
+      error: `Summary generation failed: ${message}`,
+    }, { status: 500 })
   }
 }
