@@ -23,9 +23,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user) redirect('/auth')
 
   const { count: openReviewCount } = await supabase
-    .from('parsing_reviews')
+    .from('inbound_emails')
     .select('id', { count: 'exact', head: true })
-    .is('resolution', null)
+    .eq('processing_status', 'needs_review')
 
   const { data: fund } = await supabase
     .from('funds')
