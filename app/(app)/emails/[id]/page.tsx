@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { InboundEmail } from '@/lib/types/database'
 import { ChevronLeft } from 'lucide-react'
 import { ReprocessButton } from './reprocess-button'
+import { SaveToDriveButton } from './save-to-drive-button'
 import { CollapsibleJson } from './collapsible-json'
 
 // ---------------------------------------------------------------------------
@@ -301,8 +302,18 @@ export default async function EmailDetailPage({ params }: { params: { id: string
         </section>
       )}
 
-      {/* Reprocess */}
-      <section className="pt-2 border-t">
+      {/* Actions */}
+      <section className="pt-2 border-t space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Save to Google Drive</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Saves the email body and attachments to your connected Google Drive folder.
+            </p>
+          </div>
+          <SaveToDriveButton emailId={email.id} />
+        </div>
+
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-medium">Reprocess Email</p>

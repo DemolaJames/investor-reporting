@@ -14,7 +14,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { AlertCircle, Check, Loader2, Plus, Trash2, Copy, FolderOpen, ChevronRight, Unlink, Shield } from 'lucide-react'
+import { AlertCircle, Check, Loader2, Plus, Trash2, Copy, FolderOpen, Unlink, Shield } from 'lucide-react'
 
 interface Sender {
   id: string
@@ -304,12 +304,6 @@ function PostmarkSection({
 
 // ──────────────────────────── Google Drive ────────────────────────────
 
-interface DriveFolder {
-  id: string
-  name: string
-  mimeType: string
-}
-
 function GoogleDriveSection({
   connected,
   folderId,
@@ -325,13 +319,11 @@ function GoogleDriveSection({
   clientId: string
   onChanged: () => void
 }) {
-  const [browsing, setBrowsing] = useState(false)
-  const [folders, setFolders] = useState<DriveFolder[]>([])
-  const [loadingFolders, setLoadingFolders] = useState(false)
-  const [currentParent, setCurrentParent] = useState<string | null>(null)
-  const [breadcrumbs, setBreadcrumbs] = useState<Array<{ id: string; name: string }>>([])
   const [disconnecting, setDisconnecting] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [folderError, setFolderError] = useState<string | null>(null)
+  const [showFolderInput, setShowFolderInput] = useState(false)
 
   // Credentials state
   const [editingCreds, setEditingCreds] = useState(!hasCredentials)
@@ -361,61 +353,23 @@ function GoogleDriveSection({
     }
   }
 
-  const loadFolders = async (parentId?: string) => {
-    setLoadingFolders(true)
-    const url = parentId
-      ? `/api/settings/drive/folders?parent=${parentId}`
-      : '/api/settings/drive/folders'
-    const res = await fetch(url)
-    if (res.ok) {
-      const data = await res.json()
-      setFolders(data.folders)
-    }
-    setLoadingFolders(false)
-  }
-
-  const startBrowsing = async () => {
-    setBrowsing(true)
-    setBreadcrumbs([])
-    setCurrentParent(null)
-    await loadFolders()
-  }
-
-  const navigateToFolder = async (folder: DriveFolder) => {
-    setBreadcrumbs(prev => [...prev, { id: folder.id, name: folder.name }])
-    setCurrentParent(folder.id)
-    await loadFolders(folder.id)
-  }
-
-  const navigateToBreadcrumb = async (index: number) => {
-    if (index < 0) {
-      setBreadcrumbs([])
-      setCurrentParent(null)
-      await loadFolders()
-    } else {
-      const crumb = breadcrumbs[index]
-      setBreadcrumbs(prev => prev.slice(0, index + 1))
-      setCurrentParent(crumb.id)
-      await loadFolders(crumb.id)
-    }
-  }
-
-  const selectCurrentFolder = async () => {
-    if (!currentParent || breadcrumbs.length === 0) return
-    setSaving(true)
-    const lastCrumb = breadcrumbs[breadcrumbs.length - 1]
-    const res = await fetch('/api/settings/drive', {
-      method: 'PATCH',
+  const createFolder = async () => {
+    if (!newFolderName.trim()) return
+    setCreatingFolder(true)
+    setFolderError(null)
+    const res = await fetch('/api/settings/drive/folders', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        folder_id: lastCrumb.id,
-        folder_name: lastCrumb.name,
-      }),
+      body: JSON.stringify({ folderName: newFolderName.trim() }),
     })
-    setSaving(false)
+    setCreatingFolder(false)
     if (res.ok) {
-      setBrowsing(false)
+      setNewFolderName('')
+      setShowFolderInput(false)
       onChanged()
+    } else {
+      const data = await res.json().catch(() => ({}))
+      setFolderError(data.error || 'Failed to create folder')
     }
   }
 
@@ -423,11 +377,61 @@ function GoogleDriveSection({
     setDisconnecting(true)
     const res = await fetch('/api/settings/drive', { method: 'DELETE' })
     setDisconnecting(false)
-    if (res.ok) {
-      setBrowsing(false)
-      onChanged()
-    }
+    if (res.ok) onChanged()
   }
+
+  // Credentials UI (shared between connected and disconnected states)
+  const credentialsUI = (editingCreds || !hasCredentials) ? (
+    <div className="space-y-3 mb-4">
+      <p className="text-xs font-medium">Google OAuth credentials</p>
+      <div className="space-y-2">
+        <div>
+          <Label>Client ID</Label>
+          <Input
+            value={newClientId}
+            onChange={(e) => setNewClientId(e.target.value)}
+            placeholder="123456789.apps.googleusercontent.com"
+          />
+        </div>
+        <div>
+          <Label>Client secret</Label>
+          <Input
+            type="password"
+            value={newClientSecret}
+            onChange={(e) => setNewClientSecret(e.target.value)}
+            placeholder="GOCSPX-..."
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Create credentials at{' '}
+          <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="underline">
+            Google Cloud Console
+          </a>
+          . Add <code className="text-[11px] bg-muted px-1 rounded">{typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/google/callback</code> as an authorized redirect URI.
+        </p>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={saveCredentials} disabled={savingCreds || !newClientId.trim() || !newClientSecret.trim()}>
+            {savingCreds ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Save credentials'}
+          </Button>
+          {hasCredentials && (
+            <Button size="sm" variant="outline" onClick={() => setEditingCreds(false)}>
+              Cancel
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  ) : (
+    <div className="flex items-center gap-2 mb-4">
+      <p className="text-xs text-muted-foreground flex-1">
+        Google credentials configured.
+        {credsSaved && <span className="text-emerald-600 ml-1">Saved!</span>}
+      </p>
+      <Button size="sm" variant="outline" onClick={() => setEditingCreds(true)} className="text-xs h-7">
+        Update credentials
+      </Button>
+    </div>
+  )
 
   if (!connected) {
     return (
@@ -435,53 +439,7 @@ function GoogleDriveSection({
         <p className="text-xs text-muted-foreground mb-3">
           Connect Google Drive to automatically save email attachments and reports to a folder.
         </p>
-
-        {/* Credentials setup */}
-        {(editingCreds || !hasCredentials) ? (
-          <div className="space-y-3 mb-4">
-            <p className="text-xs font-medium">Google OAuth credentials</p>
-            <div className="space-y-2">
-              <div>
-                <Label>Client ID</Label>
-                <Input
-                  value={newClientId}
-                  onChange={(e) => setNewClientId(e.target.value)}
-                  placeholder="123456789.apps.googleusercontent.com"
-                />
-              </div>
-              <div>
-                <Label>Client secret</Label>
-                <Input
-                  type="password"
-                  value={newClientSecret}
-                  onChange={(e) => setNewClientSecret(e.target.value)}
-                  placeholder="GOCSPX-..."
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Create credentials at{' '}
-                <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="underline">
-                  Google Cloud Console
-                </a>
-                . Add <code className="text-[11px] bg-muted px-1 rounded">{typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/google/callback</code> as an authorized redirect URI.
-              </p>
-              <Button size="sm" onClick={saveCredentials} disabled={savingCreds || !newClientId.trim() || !newClientSecret.trim()}>
-                {savingCreds ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Save credentials'}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 mb-4">
-            <p className="text-xs text-muted-foreground flex-1">
-              Google credentials configured.
-              {credsSaved && <span className="text-emerald-600 ml-1">Saved!</span>}
-            </p>
-            <Button size="sm" variant="outline" onClick={() => setEditingCreds(true)} className="text-xs h-7">
-              Update credentials
-            </Button>
-          </div>
-        )}
-
+        {credentialsUI}
         {hasCredentials && (
           <Button size="sm" onClick={() => { window.location.href = '/api/auth/google' }}>
             Connect Google Drive
@@ -497,61 +455,52 @@ function GoogleDriveSection({
         Google Drive is connected. Attachments from processed emails will be saved automatically.
       </p>
 
-      {/* Credentials management (collapsed by default when connected) */}
-      {editingCreds ? (
-        <div className="space-y-3 mb-4">
-          <p className="text-xs font-medium">Google OAuth credentials</p>
-          <div className="space-y-2">
-            <div>
-              <Label>Client ID</Label>
-              <Input
-                value={newClientId}
-                onChange={(e) => setNewClientId(e.target.value)}
-                placeholder="123456789.apps.googleusercontent.com"
-              />
-            </div>
-            <div>
-              <Label>Client secret</Label>
-              <Input
-                type="password"
-                value={newClientSecret}
-                onChange={(e) => setNewClientSecret(e.target.value)}
-                placeholder="GOCSPX-..."
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={saveCredentials} disabled={savingCreds || !newClientId.trim() || !newClientSecret.trim()}>
-                {savingCreds ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Save credentials'}
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setEditingCreds(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 mb-4">
-          <p className="text-xs text-muted-foreground flex-1">
-            Google credentials configured.
-            {credsSaved && <span className="text-emerald-600 ml-1">Saved!</span>}
-          </p>
-          <Button size="sm" variant="outline" onClick={() => setEditingCreds(true)} className="text-xs h-7">
-            Update credentials
-          </Button>
-        </div>
-      )}
+      {credentialsUI}
 
-      {folderName && (
+      {folderName ? (
         <div className="flex items-center gap-2 mb-3 text-sm">
           <FolderOpen className="h-4 w-4 text-muted-foreground" />
           <span>Saving to: <span className="font-medium">{folderName}</span></span>
         </div>
+      ) : (
+        <p className="text-xs text-muted-foreground mb-3">
+          No folder selected. Create or specify a folder to start saving reports.
+        </p>
       )}
 
-      {!browsing ? (
+      {showFolderInput ? (
+        <div className="border rounded-lg p-3 space-y-3 mb-3">
+          <div>
+            <Label>Folder name</Label>
+            <Input
+              value={newFolderName}
+              onChange={(e) => { setNewFolderName(e.target.value); setFolderError(null) }}
+              placeholder="Portfolio Reports"
+              onKeyDown={(e) => { if (e.key === 'Enter') createFolder() }}
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              A folder with this name will be created in your Google Drive root. If it already exists, the existing folder will be used.
+            </p>
+          </div>
+          {folderError && (
+            <p className="text-xs text-destructive flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" /> {folderError}
+            </p>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Button size="sm" variant="outline" onClick={() => { setShowFolderInput(false); setFolderError(null) }}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={createFolder} disabled={creatingFolder || !newFolderName.trim()}>
+              {creatingFolder ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+              {folderId ? 'Update folder' : 'Create folder'}
+            </Button>
+          </div>
+        </div>
+      ) : (
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={startBrowsing}>
-            {folderId ? 'Change folder' : 'Select folder'}
+          <Button size="sm" variant="outline" onClick={() => setShowFolderInput(true)}>
+            {folderId ? 'Change folder' : 'Set folder'}
           </Button>
           <Button
             size="sm"
@@ -563,66 +512,6 @@ function GoogleDriveSection({
             {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unlink className="h-3.5 w-3.5 mr-1" />}
             Disconnect
           </Button>
-        </div>
-      ) : (
-        <div className="border rounded-lg p-3 space-y-3">
-          {/* Breadcrumbs */}
-          <div className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
-            <button
-              onClick={() => navigateToBreadcrumb(-1)}
-              className="hover:text-foreground"
-            >
-              My Drive
-            </button>
-            {breadcrumbs.map((crumb, i) => (
-              <span key={crumb.id} className="flex items-center gap-1">
-                <ChevronRight className="h-3 w-3" />
-                <button
-                  onClick={() => navigateToBreadcrumb(i)}
-                  className="hover:text-foreground"
-                >
-                  {crumb.name}
-                </button>
-              </span>
-            ))}
-          </div>
-
-          {/* Folder list */}
-          {loadingFolders ? (
-            <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading folders...
-            </div>
-          ) : folders.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No subfolders</p>
-          ) : (
-            <div className="border rounded divide-y max-h-48 overflow-auto">
-              {folders.map(folder => (
-                <button
-                  key={folder.id}
-                  onClick={() => navigateToFolder(folder)}
-                  className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-accent transition-colors text-left"
-                >
-                  <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="flex-1 truncate">{folder.name}</span>
-                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex gap-2 justify-end">
-            <Button size="sm" variant="outline" onClick={() => setBrowsing(false)}>
-              Cancel
-            </Button>
-            {currentParent && breadcrumbs.length > 0 && (
-              <Button size="sm" onClick={selectCurrentFolder} disabled={saving}>
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
-                Select &quot;{breadcrumbs[breadcrumbs.length - 1].name}&quot;
-              </Button>
-            )}
-          </div>
         </div>
       )}
     </Section>

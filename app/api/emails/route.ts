@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import type { InboundEmail, Company } from '@/lib/types/database'
 
-const PAGE_SIZE = 50
+const DEFAULT_PAGE_SIZE = 50
+const MAX_PAGE_SIZE = 1000
 
 type EmailListRow = Pick<
   InboundEmail,
@@ -22,6 +23,7 @@ export async function GET(req: NextRequest) {
   const dateFrom = sp.get('date_from')
   const dateTo = sp.get('date_to')
   const page = Math.max(1, parseInt(sp.get('page') ?? '1', 10))
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(sp.get('page_size') ?? String(DEFAULT_PAGE_SIZE), 10)))
 
   let query = supabase
     .from('inbound_emails')
@@ -30,7 +32,7 @@ export async function GET(req: NextRequest) {
       { count: 'exact' }
     )
     .order('received_at', { ascending: false })
-    .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
+    .range((page - 1) * pageSize, page * pageSize - 1)
 
   if (status) query = query.eq('processing_status', status)
   if (companyId) query = query.eq('company_id', companyId)
@@ -55,7 +57,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     total: count ?? 0,
     page,
-    page_size: PAGE_SIZE,
+    page_size: pageSize,
     items,
   })
 }
