@@ -1,8 +1,9 @@
 'use client'
 
 import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from 'react'
-import { MessageSquare, Send, Pencil, X, Check } from 'lucide-react'
+import { MessageSquare, Send, Pencil, X, Check, Building2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import Link from 'next/link'
 
 interface Note {
   id: string
@@ -10,16 +11,23 @@ interface Note {
   userId: string
   userName: string | null
   userEmail: string
+  companyId: string | null
+  companyName: string | null
   createdAt: string
   edited: boolean
+}
+
+interface CompanyOption {
+  id: string
+  name: string
 }
 
 interface NotesContextValue {
   open: boolean
   toggle: () => void
-  companyId: string
   userId: string
   isAdmin: boolean
+  companies: CompanyOption[]
   inputRef: React.MutableRefObject<HTMLTextAreaElement | null>
 }
 
@@ -38,17 +46,17 @@ function formatRelativeTime(dateStr: string) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-const NotesContext = createContext<NotesContextValue | null>(null)
+const DashboardNotesContext = createContext<NotesContextValue | null>(null)
 
-export function CompanyNotesLayout({
-  companyId,
+export function DashboardNotesLayout({
   userId,
   isAdmin,
+  companies,
   children,
 }: {
-  companyId: string
   userId: string
   isAdmin: boolean
+  companies: CompanyOption[]
   children: ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -61,14 +69,14 @@ export function CompanyNotesLayout({
   }, [open])
 
   return (
-    <NotesContext.Provider value={{ open, toggle: () => setOpen(prev => !prev), companyId, userId, isAdmin, inputRef }}>
+    <DashboardNotesContext.Provider value={{ open, toggle: () => setOpen(prev => !prev), userId, isAdmin, companies, inputRef }}>
       {children}
-    </NotesContext.Provider>
+    </DashboardNotesContext.Provider>
   )
 }
 
-export function ChatButton() {
-  const ctx = useContext(NotesContext)
+export function DashboardChatButton() {
+  const ctx = useContext(DashboardNotesContext)
   if (!ctx) return null
   const { open, toggle } = ctx
   return (
@@ -84,31 +92,38 @@ export function ChatButton() {
   )
 }
 
-export function CompanyNotesPanel() {
-  const ctx = useContext(NotesContext)
+export function DashboardNotesPanel() {
+  const ctx = useContext(DashboardNotesContext)
   if (!ctx || !ctx.open) return null
   return <NotesPanel ctx={ctx} />
 }
 
+type FilterMode = 'all' | 'general'
+
 function NotesPanel({ ctx }: { ctx: NotesContextValue }) {
-  const { companyId, userId, isAdmin, inputRef, toggle } = ctx
+  const { userId, isAdmin, companies, inputRef, toggle } = ctx
   const [notes, setNotes] = useState<Note[]>([])
   const [loading, setLoading] = useState(false)
   const [content, setContent] = useState('')
   const [posting, setPosting] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
+  const [filter, setFilter] = useState<FilterMode>('all')
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('')
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/companies/${companyId}/notes`)
+    const url = filter === 'general'
+      ? '/api/dashboard/notes?filter=general'
+      : '/api/dashboard/notes'
+    fetch(url)
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data)) setNotes(data)
       })
       .finally(() => setLoading(false))
-  }, [companyId])
+  }, [filter])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -120,15 +135,23 @@ function NotesPanel({ ctx }: { ctx: NotesContextValue }) {
     if (!content.trim() || posting) return
     setPosting(true)
     try {
-      const res = await fetch(`/api/companies/${companyId}/notes`, {
+      const body: { content: string; companyId?: string } = { content: content.trim() }
+      if (selectedCompanyId) body.companyId = selectedCompanyId
+      const res = await fetch('/api/dashboard/notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: content.trim() }),
+        body: JSON.stringify(body),
       })
       if (res.ok) {
         const note = await res.json()
-        setNotes(prev => [...prev, note])
+        // If filtering to general and note has a company, don't add to visible list
+        if (filter === 'general' && note.companyId) {
+          // Note was created but won't appear in current filter
+        } else {
+          setNotes(prev => [...prev, note])
+        }
         setContent('')
+        setSelectedCompanyId('')
         setTimeout(() => inputRef.current?.focus(), 50)
       }
     } finally {
@@ -137,7 +160,7 @@ function NotesPanel({ ctx }: { ctx: NotesContextValue }) {
   }
 
   async function handleDelete(noteId: string) {
-    const res = await fetch(`/api/companies/${companyId}/notes/${noteId}`, {
+    const res = await fetch(`/api/dashboard/notes/${noteId}`, {
       method: 'DELETE',
     })
     if (res.ok) {
@@ -152,7 +175,7 @@ function NotesPanel({ ctx }: { ctx: NotesContextValue }) {
 
   async function handleEdit(noteId: string) {
     if (!editContent.trim()) return
-    const res = await fetch(`/api/companies/${companyId}/notes/${noteId}`, {
+    const res = await fetch(`/api/dashboard/notes/${noteId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: editContent.trim() }),
@@ -168,7 +191,27 @@ function NotesPanel({ ctx }: { ctx: NotesContextValue }) {
   return (
     <div className="w-full lg:w-[340px] shrink-0 lg:sticky top-4 max-h-[80vh] lg:max-h-[calc(100vh-6rem)] rounded-lg border bg-card flex flex-col">
       <div className="px-4 py-3 flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground">Notes</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-medium text-muted-foreground">Team Notes</h2>
+          <div className="flex items-center rounded-md border text-[11px]">
+            <button
+              onClick={() => setFilter('all')}
+              className={`px-2 py-0.5 rounded-l-md transition-colors ${
+                filter === 'all' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setFilter('general')}
+              className={`px-2 py-0.5 rounded-r-md transition-colors ${
+                filter === 'general' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              General
+            </button>
+          </div>
+        </div>
         <button onClick={toggle}>
           <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
         </button>
@@ -206,6 +249,15 @@ function NotesPanel({ ctx }: { ctx: NotesContextValue }) {
                 )}
               </div>
             </div>
+            {note.companyName && (
+              <Link
+                href={`/companies/${note.companyId}`}
+                className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground mb-0.5"
+              >
+                <Building2 className="h-2.5 w-2.5" />
+                {note.companyName}
+              </Link>
+            )}
             {editingId === note.id ? (
               <div className="flex gap-1.5">
                 <textarea
@@ -241,7 +293,17 @@ function NotesPanel({ ctx }: { ctx: NotesContextValue }) {
         ))}
       </div>
 
-      <div className="px-4 py-3">
+      <div className="px-4 py-3 space-y-2">
+        <select
+          value={selectedCompanyId}
+          onChange={e => setSelectedCompanyId(e.target.value)}
+          className="w-full text-xs rounded-md border bg-transparent px-2 py-1.5 text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <option value="">General (no company)</option>
+          {companies.map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
         <div className="flex gap-2">
           <textarea
             ref={(el) => { inputRef.current = el }}
