@@ -31,6 +31,8 @@ export async function POST(req: NextRequest) {
       error = 'API key is valid, but quota exceeded. Check your billing and plan at ai.google.dev.'
     } else if (lower.includes('permission') || lower.includes('forbidden') || lower.includes('403')) {
       error = 'API key is valid, but lacks permission. Ensure the Generative Language API is enabled in your Google Cloud project.'
+    } else if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('unauthenticated')) {
+      error = 'API key is not authorized for the Generative Language API. Go to Google Cloud Console → APIs & Services → enable "Generative Language API" for your project, then try again.'
     } else {
       error = raw
     }
