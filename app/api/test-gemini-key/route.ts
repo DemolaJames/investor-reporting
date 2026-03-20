@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createProviderFromKey } from '@/lib/ai'
 import { rateLimit } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = await rateLimit({ key: `test-gemini:${user.id}`, limit: 5, windowSeconds: 300 })
+  const limited = await rateLimit({ key: `test-gemini:${req.headers.get('x-forwarded-for') ?? 'unknown'}`, limit: 5, windowSeconds: 300 })
   if (limited) return limited
 
   const { apiKey } = await req.json()
