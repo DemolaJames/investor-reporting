@@ -3,8 +3,10 @@ import type { AIProvider, AIModel, AIResult, CreateMessageParams, CreateChatPara
 
 export class GeminiProvider implements AIProvider {
   private client: GoogleGenAI
+  private apiKey: string
 
   constructor(apiKey: string) {
+    this.apiKey = apiKey
     this.client = new GoogleGenAI({ apiKey })
   }
 
@@ -69,11 +71,18 @@ export class GeminiProvider implements AIProvider {
   }
 
   async testConnection(): Promise<void> {
-    await this.client.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: 'Hi',
-      config: { maxOutputTokens: 10 },
+    // Use direct REST call instead of SDK to avoid serverless environment issues
+    // where the SDK may not correctly forward the apiKey
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.apiKey}`
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: 'Hi' }] }] }),
     })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body?.error?.message || `HTTP ${res.status}`)
+    }
   }
 
   async listModels(): Promise<AIModel[]> {
