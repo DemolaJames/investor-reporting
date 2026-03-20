@@ -1,3 +1,6 @@
+-- regulation_url is not applicable for internal items (e.g. insurance) — make nullable
+alter table compliance_items alter column regulation_url drop not null;
+
 -- Seed compliance items registry
 
 insert into compliance_items (id, category, name, short_name, description, frequency, deadline_description, deadline_month, deadline_day, rolling_days, applicability_text, applicability_question, filing_system, filing_portal_url, regulation_url, form_instructions_url, complexity, notes, alert, sort_order) values
