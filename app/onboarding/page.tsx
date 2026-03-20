@@ -319,11 +319,38 @@ function JoinFundScreen({
 }
 
 // ---------------------------------------------------------------------------
-// Step 1: Fund name + Claude API key
+// Step 1: Fund name + AI provider key
 // ---------------------------------------------------------------------------
+
+type AIProvider = 'anthropic' | 'openai' | 'gemini'
+
+const PROVIDER_CONFIG: Record<AIProvider, { label: string; placeholder: string; testEndpoint: string; docsUrl: string; docsLabel: string }> = {
+  anthropic: {
+    label: 'Anthropic (Claude) API key',
+    placeholder: 'sk-ant-…',
+    testEndpoint: '/api/test-claude-key',
+    docsUrl: 'https://console.anthropic.com',
+    docsLabel: 'console.anthropic.com',
+  },
+  openai: {
+    label: 'OpenAI API key',
+    placeholder: 'sk-…',
+    testEndpoint: '/api/test-openai-key',
+    docsUrl: 'https://platform.openai.com/api-keys',
+    docsLabel: 'platform.openai.com',
+  },
+  gemini: {
+    label: 'Google Gemini API key',
+    placeholder: 'AIza…',
+    testEndpoint: '/api/test-gemini-key',
+    docsUrl: 'https://aistudio.google.com/app/apikey',
+    docsLabel: 'aistudio.google.com',
+  },
+}
 
 function Step1({ onComplete }: { onComplete: (fundId: string, webhookToken: string) => void }) {
   const [fundName, setFundName] = useState('')
+  const [provider, setProvider] = useState<AIProvider>('anthropic')
   const [apiKey, setApiKey] = useState('')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<'success' | 'error' | null>(null)
@@ -331,13 +358,22 @@ function Step1({ onComplete }: { onComplete: (fundId: string, webhookToken: stri
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const config = PROVIDER_CONFIG[provider]
+
+  function handleProviderChange(p: AIProvider) {
+    setProvider(p)
+    setApiKey('')
+    setTestResult(null)
+    setTestError(null)
+  }
+
   async function testKey() {
     if (!apiKey.trim()) return
     setTesting(true)
     setTestResult(null)
     setTestError(null)
     try {
-      const res = await fetch('/api/test-claude-key', {
+      const res = await fetch(config.testEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apiKey }),
@@ -367,7 +403,7 @@ function Step1({ onComplete }: { onComplete: (fundId: string, webhookToken: stri
       const res = await fetch('/api/onboarding/fund', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fundName, claudeApiKey: apiKey }),
+        body: JSON.stringify({ fundName, provider, apiKey }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
@@ -381,7 +417,7 @@ function Step1({ onComplete }: { onComplete: (fundId: string, webhookToken: stri
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Fund name &amp; Claude API key</CardTitle>
+        <CardTitle>Fund name &amp; AI provider</CardTitle>
         <CardDescription>
           Your API key is encrypted before storage and never exposed.
         </CardDescription>
@@ -404,12 +440,32 @@ function Step1({ onComplete }: { onComplete: (fundId: string, webhookToken: stri
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="api-key">Claude API key</Label>
+          <Label>AI provider</Label>
+          <div className="flex gap-2">
+            {(['anthropic', 'openai', 'gemini'] as AIProvider[]).map(p => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => handleProviderChange(p)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                  provider === p
+                    ? 'border-primary bg-primary/5 ring-1 ring-primary font-medium'
+                    : 'hover:bg-accent text-muted-foreground'
+                }`}
+              >
+                {p === 'anthropic' ? 'Claude' : p === 'openai' ? 'OpenAI' : 'Gemini'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="api-key">{config.label}</Label>
           <div className="flex gap-2">
             <Input
               id="api-key"
               type="password"
-              placeholder="sk-ant-…"
+              placeholder={config.placeholder}
               value={apiKey}
               onChange={e => {
                 setApiKey(e.target.value)
@@ -431,13 +487,8 @@ function Step1({ onComplete }: { onComplete: (fundId: string, webhookToken: stri
           )}
           <p className="text-xs text-muted-foreground">
             Get your key at{' '}
-            <a
-              href="https://console.anthropic.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
-              console.anthropic.com
+            <a href={config.docsUrl} target="_blank" rel="noopener noreferrer" className="underline">
+              {config.docsLabel}
             </a>
           </p>
         </div>

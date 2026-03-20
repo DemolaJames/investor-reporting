@@ -74,8 +74,10 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { fundName, claudeApiKey } = await req.json()
-  if (!fundName?.trim() || !claudeApiKey?.trim()) {
+  const { fundName, claudeApiKey, provider, apiKey } = await req.json()
+  const resolvedProvider = (provider as string) || 'anthropic'
+  const resolvedKey: string = apiKey?.trim() || claudeApiKey?.trim() || ''
+  if (!fundName?.trim() || !resolvedKey) {
     return NextResponse.json({ error: 'Fund name and API key are required' }, { status: 400 })
   }
 
@@ -95,11 +97,17 @@ export async function POST(req: NextRequest) {
     const kek = process.env.ENCRYPTION_KEY
     if (kek) {
       const dek = randomBytes(32).toString('hex')
+      const providerKeyColumn = resolvedProvider === 'gemini'
+        ? 'gemini_api_key_encrypted'
+        : resolvedProvider === 'openai'
+          ? 'openai_api_key_encrypted'
+          : 'claude_api_key_encrypted'
       await admin
         .from('fund_settings')
         .update({
-          claude_api_key_encrypted: encrypt(claudeApiKey.trim(), dek),
+          [providerKeyColumn]: encrypt(resolvedKey, dek),
           encryption_key_encrypted: encrypt(dek, kek),
+          default_ai_provider: resolvedProvider,
         })
         .eq('fund_id', existing.fund_id)
     }
@@ -134,7 +142,7 @@ export async function POST(req: NextRequest) {
   // Envelope encryption:
   //   1. Generate a random per-fund DEK (data encryption key)
   //   2. Encrypt the DEK with the master KEK from ENCRYPTION_KEY env var
-  //   3. Encrypt the Claude API key with the DEK
+  //   3. Encrypt the AI API key with the DEK
   const kek = process.env.ENCRYPTION_KEY
   if (!kek) {
     await admin.from('funds').delete().eq('id', fund.id)
@@ -143,7 +151,12 @@ export async function POST(req: NextRequest) {
 
   const dek = randomBytes(32).toString('hex')
   const encryptionKeyEncrypted = encrypt(dek, kek)
-  const claudeApiKeyEncrypted = encrypt(claudeApiKey.trim(), dek)
+
+  const providerKeyColumn = resolvedProvider === 'gemini'
+    ? 'gemini_api_key_encrypted'
+    : resolvedProvider === 'openai'
+      ? 'openai_api_key_encrypted'
+      : 'claude_api_key_encrypted'
 
   // Generate a random webhook token for Postmark URL validation
   const webhookToken = randomBytes(32).toString('hex')
@@ -153,9 +166,10 @@ export async function POST(req: NextRequest) {
     .from('fund_settings')
     .insert({
       fund_id: fund.id,
-      claude_api_key_encrypted: claudeApiKeyEncrypted,
+      [providerKeyColumn]: encrypt(resolvedKey, dek),
       encryption_key_encrypted: encryptionKeyEncrypted,
       postmark_webhook_token_encrypted: webhookTokenEncrypted,
+      default_ai_provider: resolvedProvider,
     })
 
   if (settingsError) {
